@@ -1,0 +1,13 @@
+.scene-container {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  z-index: -1; /* Places it behind content but above background */
+  pointer-events: none; /* Allows clicking through to content */
+}
+
+/* If you want to make the 3D elements interactive */
+.scene-container canvas {
+  pointer-events: auto;
+}
