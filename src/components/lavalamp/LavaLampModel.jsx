@@ -1,38 +1,66 @@
-import React, { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls, Stats, Environment } from '@react-three/drei';
+import { OrbitControls, Stats, Environment, Html } from '@react-three/drei';
 import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
 import * as THREE from 'three';
 
 // Simulation constants
-const CONTAINER_HEIGHT = 12;
-const CONTAINER_RADIUS = 3;
-const BUFFER_ZONE = 0.2;
+const CONTAINER_HEIGHT = 16; // Increased from 12
+const CONTAINER_RADIUS = 4.5; // Increased from 3
+const BUFFER_ZONE = 0.2; // Keep the same buffer zone percentage
 
-// Reduce complexity of these key performance parameters
+// Updated constants for smoother substance with occasional blob ejection
 const RESOLUTION = 128;
-const NUM_METABALLS = 6;
-const NUM_SUPPORT_BALLS = 3;
-const NUM_FREE_PARTICLES = 2;
+const NUM_METABALLS = 4; // Increase to have more potential ejections
+const NUM_SUPPORT_BALLS = 2; // Reduce for a more unified main blob
+const NUM_FREE_PARTICLES = 1;
 
-// Keep the improved metaball parameters
-const ISOLATION = 80;
+// Increase isolation for smoother surface
+const ISOLATION = 80; // Reduced from 150 to create a larger surface
 
-// Add these constants for controlling non-spherical nature
-const ASYMMETRY_FACTOR = 2 // Increased from 0.7
-const INTERNAL_WARP_STRENGTH = 3; // Increased from 0.5
+// Reduce asymmetry for more cohesive main blob
+const ASYMMETRY_FACTOR = 1.5; // Reduced from 3
+const INTERNAL_WARP_STRENGTH = 1.0; // Reduced from 3
 
-// Add these new constants for more shape control
-const ELONGATION_FACTOR = 3; // Controls how stretched metaballs can become
-const SHAPE_COMPLEXITY =1; // Controls how many sub-balls make up each metaball
-const DISTORTION_AMOUNT =.15; // Controls spacing between sub-balls
+// Simplify shape for smoother appearance
+const ELONGATION_FACTOR = 0.8; // Reduced for less stretching
+const SHAPE_COMPLEXITY = 1; // Keep minimal for smoother appearance
+const DISTORTION_AMOUNT = 0.1; // Reduced from 0.15 for smoother surface
 
-// Add this new constant for controlling jiggling intensity
-const JIGGLE_INTENSITY = 1.0; // Adjust this value to increase/decrease overall jiggling
+// Reduce jiggling for more stable main mass
+const JIGGLE_INTENSITY = 0.6; // Reduced from 1.0
+
+// Add this constant for mouse interaction
+const MOUSE_REPULSION_STRENGTH = 2.0; // Strength of the mouse repulsion effect
+
+// First, import navigation capabilities
+import { useNavigate } from 'react-router-dom';
 
 const LavaLampModel = ({ portfolioData }) => {
+  // Add navigation hook
+  const navigate = useNavigate();
+  
+  // Define portfolio sections for navigation
+  const portfolioSections = [
+    { id: 0, name: "Projects", path: "/projects", color: new THREE.Color(0x111111) },
+    { id: 1, name: "About", path: "/about", color: new THREE.Color(0x222222) },
+    { id: 2, name: "Skills", path: "/skills", color: new THREE.Color(0x333333) },
+    { id: 3, name: "Contact", path: "/contact", color: new THREE.Color(0x444444) }
+  ];
+  
+  // Add state for hover feedback
+  const [hoveredSection, setHoveredSection] = useState(null);
+  const blobPositions = useRef(Array(NUM_METABALLS).fill(new THREE.Vector3()));
+  const blobStrengths = useRef(Array(NUM_METABALLS).fill(0));
+  
   const { camera, gl, scene } = useThree();
   const [stats, setStats] = useState({ fps: 0 });
+
+  // Add these missing mouse interaction states and refs
+  const [mouseActive, setMouseActive] = useState(false);
+  const mousePos = useRef(new THREE.Vector2());
+  const raycaster = useRef(new THREE.Raycaster());
+  const mouse3D = useRef(new THREE.Vector3());
 
   // Add these arrays to track previous positions for velocity-based stretching
   const [prevDirX] = useState(Array(NUM_METABALLS).fill(0));
@@ -48,12 +76,12 @@ const LavaLampModel = ({ portfolioData }) => {
     clock: new THREE.Clock(),
     lastTime: 0,
     time: Math.random() * 100,
-    speed: 0.1,
-    strength: 2, // INCREASED from 0.8 for stronger connections
-    subtract: 40, // REDUCED from 11 to make connections stronger
+    speed: 0.15, // Slightly slower for more controlled movement
+    strength: 1.0, // Increased from 2.0
+    subtract: 12, // Decreased from 30
     baseTemp: 0.1,
-    cycleSpeed: 0.04,
-    // Rest of your configuration stays the same
+    cycleSpeed: 0.02, // Slower cycles for more dramatic blob ejection/return
+    // Rest of configuration remains the same
     phaseOffsets: {
       x: Math.random() * Math.PI * 2,
       y: Math.random() * Math.PI * 2,
@@ -74,20 +102,59 @@ const LavaLampModel = ({ portfolioData }) => {
     console.log("Initializing lava lamp with marching cubes");
 
     // Setup camera at fixed maximum distance
-    camera.position.set(0, 0, 20); // Set to maximum distance
+    camera.position.set(0, 0, 25); // Increased from 20 to compensate for larger container
     camera.lookAt(0, 0, 0);
 
-    // Setup renderer
+    // Setup renderer with transparency support
     gl.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    gl.setClearColor(0xffffff, 1.0);
+    gl.toneMapping = THREE.ACESFilmicToneMapping;
+    gl.toneMappingExposure = 1.2;
 
     // Create marching cubes material - BLACK metaballs
-    const lavaMaterial = new THREE.MeshStandardMaterial({  // Using MeshStandardMaterial instead of MeshPhysicalMaterial
-      color: new THREE.Color('#000000'),
-      emissive: new THREE.Color('#000000'),
-      emissiveIntensity: 0.05,
-      metalness: .6,      // In the useFrame function, balance movement amplitudes:
+    const fragmentShader = `
+  varying vec3 vNormal;
+  varying vec3 vViewPosition;
+  
+  void main() {
+    vec3 baseColor = vec3(0.02, 0.02, 0.02); // Near-black base
+    vec3 highlightColor = vec3(0.4, 0.4, 0.4); // Brighter highlights
+    
+    // Calculate fresnel effect for edge highlighting
+    vec3 viewDir = normalize(vViewPosition);
+    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.0);
+    
+    // Create gradient based on viewing angle
+    vec3 finalColor = mix(baseColor, highlightColor, fresnel);
+    
+    // More opaque overall
+    float opacity = 0.9 - fresnel * 0.2;
+    
+    gl_FragColor = vec4(finalColor, opacity);
+  }
+`;
 
-      roughness: .9,       // Increased from 0.3 to create matte finish
+    const vertexShader = `
+  varying vec3 vNormal;
+  varying vec3 vViewPosition;
+  
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vViewPosition = -mvPosition.xyz;
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+    // Create material with the custom shaders
+    const lavaMaterial = new THREE.ShaderMaterial({
+      uniforms: {},
+      vertexShader: vertexShader,
+      fragmentShader: fragmentShader,
+      transparent: true,
+      blending: THREE.NormalBlending, // Changed from AdditiveBlending
+      depthWrite: true, // Enable depth writing
+      side: THREE.DoubleSide // Render both sides
     });
 
     // Create marching cubes instance with improved parameters
@@ -100,11 +167,11 @@ const LavaLampModel = ({ portfolioData }) => {
     );
     effect.position.set(0, 0, 0);
 
-    // Increase the scale further to give more room
+    // Increase the scale to reflect the larger container
     effect.scale.set(
-      CONTAINER_RADIUS * 2.0, // Increased from 1.8
-      CONTAINER_RADIUS * 2.0, // Increased from 1.8
-      CONTAINER_RADIUS * 2.0  // Increased from 1.8
+      CONTAINER_RADIUS * 2.2, // Increased scale factor from 2.0
+      CONTAINER_RADIUS * 2.2, // Increased scale factor from 2.0
+      CONTAINER_RADIUS * 2.2  // Increased scale factor from 2.0
     );
 
     effect.enableUvs = false;
@@ -136,6 +203,31 @@ const LavaLampModel = ({ portfolioData }) => {
     };
   }, [camera, gl, scene]);
 
+  // Add this after your first useEffect
+  useEffect(() => {
+    // Mouse interaction event handlers
+    const handleMouseMove = (event) => {
+      // Convert mouse position to normalized device coordinates (-1 to +1)
+      mousePos.current.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mousePos.current.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    };
+
+    const handleMouseDown = () => setMouseActive(true);
+    const handleMouseUp = () => setMouseActive(false);
+
+    // Add event listeners
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
   // Create lighting for the scene
   const createLighting = (scene) => {
     // Bright ambient light for white background
@@ -154,6 +246,11 @@ const LavaLampModel = ({ portfolioData }) => {
     const topLight = new THREE.DirectionalLight(0xffffff, 0.5);
     topLight.position.set(0, 10, 0);
     scene.add(topLight);
+
+    // Add this point light
+    const innerLight = new THREE.PointLight(0x404040, 1.5);
+    innerLight.position.set(0, 0, 0);
+    scene.add(innerLight);
   };
 
   // Process metaballs for marching cubes - OPTIMIZED
@@ -271,21 +368,27 @@ const LavaLampModel = ({ portfolioData }) => {
       let radius, ballStrength;
 
       // Create lifecycle phases with reduced separation time
-      if (lifecycleBase < 1.8) { // INCREASED from 1.2 - more time connected
-        // Phase 1: moving outward but still connected
-        radius = 0.12 + (lifecycleBase * 0.15); // Reduced expansion rate from 0.18
-        ballStrength = strength * (0.9 - lifecycleBase * 0.25); // Increased from 0.85, reduced falloff
+      if (lifecycleBase < 1.5) { // Shortened connected phase
+        // Phase 1: connected to main blob
+        radius = 0.1 + (lifecycleBase * 0.1); // Slower expansion
+        ballStrength = strength * (1.0 - lifecycleBase * 0.2); // Stronger initial connection
       }
-      else if (lifecycleBase < 2.4) { // REDUCED from 2.8 - less time separated
-        // Phase 2: brief separation 
-        radius = 0.3; // Reduced from 0.32 - stays closer to center
-        ballStrength = strength * 0.55; // INCREASED from 0.42 - stronger connection
+      else if (lifecycleBase < 2.1) { // Extended separation phase
+        // Phase 2: rapid ejection
+        const ejectionProgress = (lifecycleBase - 1.5) / 0.6;
+        radius = 0.25 + ejectionProgress * 0.15; // Increase distance more dramatically
+        ballStrength = strength * (0.7 - ejectionProgress * 0.5); // Sharp decrease in connection strength
+      }
+      else if (lifecycleBase < 3.0) { // Extended independent phase
+        // Phase 3: fully separated
+        radius = 0.4; // Further away
+        ballStrength = strength * 0.2; // Very weak connection to main blob
       }
       else {
-        // Phase 3: moving inward - faster reconnection
-        const fallProgress = (lifecycleBase - 2.4) / 1.6; // Adjusted for new phase lengths
-        radius = 0.3 - fallProgress * 0.18; // Adjusted to match new radius
-        ballStrength = strength * (0.55 + fallProgress * 0.35); // Adjusted for new strength
+        // Phase 4: return to main blob
+        const fallProgress = (lifecycleBase - 3.0) / 1.0;
+        radius = 0.4 - fallProgress * 0.3;
+        ballStrength = strength * (0.2 + fallProgress * 0.8); // Rapidly increasing strength as it returns
       }
 
       // Use modulo once instead of multiple times
@@ -438,6 +541,21 @@ const LavaLampModel = ({ portfolioData }) => {
       effect.addBall(safeFx, safeFy, safeFz, strength * 0.4, subtract); // Reduced from 0.5
     }
 
+    // Add mouse interaction if active
+    if (mouseActive && mouse3D.current) {
+      // Convert normalized mouse position to marching cubes space (0-1)
+      const mx = (mouse3D.current.x + 1) * 0.5;
+      const my = (mouse3D.current.y + 1) * 0.5;
+      const mz = (mouse3D.current.z + 1) * 0.5;
+
+      // Add a negative strength ball at mouse position to create a "cutting" effect
+      effect.addBall(
+        mx, my, mz,
+        -strength * MOUSE_REPULSION_STRENGTH,
+        subtract
+      );
+    }
+
     // Update the marching cubes mesh
     effect.update();
   };
@@ -446,6 +564,21 @@ const LavaLampModel = ({ portfolioData }) => {
   useFrame((state, delta) => {
     const sim = simRef.current;
     if (!sim.initialized) return;
+
+    // Update 3D mouse position using raycasting
+    if (mousePos.current) {
+      raycaster.current.setFromCamera(mousePos.current, camera);
+
+      // Create a plane at z=0 to intersect with
+      const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+      const intersectPoint = new THREE.Vector3();
+
+      raycaster.current.ray.intersectPlane(plane, intersectPoint);
+
+      // Scale to fit in our scene
+      intersectPoint.divideScalar(10);
+      mouse3D.current = intersectPoint;
+    }
 
     // Calculate time with frame-rate independence
     const currentTime = sim.clock.getElapsedTime();
@@ -519,18 +652,73 @@ const LavaLampModel = ({ portfolioData }) => {
     }
   });
 
+  // Add click handler for navigation
+  useEffect(() => {
+    const handleClick = () => {
+      if (hoveredSection !== null && hoveredSection >= 0) {
+        const sectionIndex = hoveredSection % portfolioSections.length;
+        navigate(portfolioSections[sectionIndex].path);
+        
+        // Add a visual effect for feedback
+        const effect = marchingCubesRef.current;
+        if (effect) {
+          // Flash effect or ripple when clicking
+          effect.isolation -= 20; // Temporary change to isolation
+          setTimeout(() => {
+            effect.isolation += 20;
+          }, 200);
+        }
+      }
+    };
+    
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, [hoveredSection, navigate]);
+
+  // Add overlay component for section labels
+  const SectionLabels = () => {
+    return (
+      <div className="section-labels">
+        {hoveredSection !== null && hoveredSection >= 0 && (
+          <div className="section-label"
+               style={{
+                 position: 'absolute',
+                 left: '50%',
+                 top: '70%',
+                 transform: 'translateX(-50%)',
+                 backgroundColor: 'rgba(0,0,0,0.7)',
+                 color: 'white',
+                 padding: '10px 20px',
+                 borderRadius: '5px',
+                 fontWeight: 'bold',
+                 zIndex: 100
+               }}>
+            {portfolioSections[hoveredSection % portfolioSections.length].name}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Add this to the component return
   return (
     <>
       <Stats />
-      <OrbitControls
-        enableZoom={false} // Disable zoom completely
+      <OrbitControls 
+        enableZoom={false} 
         enablePan={true}
-        minDistance={20} // Set to maximum distance
-        maxDistance={20} // Set to maximum distance (same as min to lock it)
+        enableRotate={false}
+        autoRotate={true} // Keep auto-rotation
+        autoRotateSpeed={0.5}
+        minDistance={25}
+        maxDistance={25}
         enableDamping={true}
         dampingFactor={0.05}
       />
       <Environment preset="studio" intensity={0.3} />
+      <Html fullscreen>
+        <SectionLabels />
+      </Html>
     </>
   );
 };

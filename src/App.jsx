@@ -7,7 +7,7 @@ import Home from './pages/Home';
 import About from './pages/About';
 import Projects from './pages/Projects';
 import Contact from './pages/Contact';
-import LavaLampScene from './components/lavalamp/scene';
+import LavaLampScene from './components/lavalamp/Scene';
 import './styles/global.css';
 
 const App = () => {
@@ -15,7 +15,7 @@ const App = () => {
     <div className="app-container">
       <LavaLampScene />
       {/* <div className="content-overlay"> */}
-        {/* <Header />
+      {/* <Header />
         <Navigation />
         <Routes>
           <Route path="/" element={<Home />} />
