@@ -89,7 +89,11 @@ const createLavaLampMaterial = (baseColor, highlightColor) => {
     side: THREE.DoubleSide
   });
 };
-const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioData }) => {
+const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioData, viewport = {
+  width: window.innerWidth,
+  height: window.innerHeight,
+  aspectRatio: window.innerWidth / window.innerHeight
+} }) => {
   // Add navigation hook
   const navigate = useNavigate();
   const mouseTrail = useRef([]);
