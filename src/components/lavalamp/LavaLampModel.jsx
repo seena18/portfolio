@@ -1,8 +1,22 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, lazy, Suspense } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stats, Environment, Html } from '@react-three/drei';
-import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
 import * as THREE from 'three';
+import { useNavigate } from 'react-router-dom';
+
+// Keep your addBalls prototype method
+THREE.Object3D.prototype.addBalls = function (arr, subtract) {
+  const fld = this.field;
+  const scl = this.resolution;
+  const inv = 1 / scl;
+  for (let i = 0; i < arr.length; i++) {
+    const [x, y, z, strength] = arr[i];
+    this.addBall(x, y, z, strength, subtract, fld, scl, inv);
+  }
+};
+
+// Add simulation step constant
+const SIM_STEP = 1 / 20; // Reduced to 20Hz from 30Hz
 
 // Simulation constants
 const CONTAINER_HEIGHT = 16; // Increased from 12
@@ -10,10 +24,10 @@ const CONTAINER_RADIUS = 4.5; // Increased from 3
 const BUFFER_ZONE = 0.2; // Keep the same buffer zone percentage
 
 // Updated constants for smoother substance with occasional blob ejection
-const RESOLUTION = 128;
-const NUM_METABALLS = 4; // Increase to have more potential ejections
-const NUM_SUPPORT_BALLS = 2; // Reduce for a more unified main blob
-const NUM_FREE_PARTICLES = 1;
+const RESOLUTION = 100; // Reduced from 128 for better performance
+const NUM_METABALLS = 3; // Reduced from 4
+const NUM_SUPPORT_BALLS = 1; // Reduced from 2
+const NUM_FREE_PARTICLES = 0; // Removed free particles entirely
 
 // Increase isolation for smoother surface
 const ISOLATION = 80; // Reduced from 150 to create a larger surface
@@ -36,8 +50,6 @@ const MOUSE_TRAIL_LENGTH = 4; // Fewer points in trail
 const MOUSE_TRAIL_DECAY = 0.6; // Faster decay
 const MOUSE_TRAIL_WIDTH = 0.15; // Width of the cutting trail
 
-// First, import navigation capabilities
-import { useNavigate } from 'react-router-dom';
 // First, modify your initialization effect to make a cleaner separation between
 // material creation and simulation state
 
@@ -200,89 +212,99 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
 
   // In the initialization effect, improve the restoration logic
   useEffect(() => {
-    const sim = simRef.current;
+    // Only load MarchingCubes when needed
+    if (!marchingCubesRef.current) {
+      import('three/examples/jsm/objects/MarchingCubes.js').then(module => {
+        const { MarchingCubes } = module;
+        console.log("Initializing lava lamp with marching cubes");
 
-    // Only initialize if needed
-    if (sim.initialized) return;
+        // Setup camera at fixed maximum distance
+        camera.position.set(0, 0, 25);
+        camera.lookAt(0, 0, 0);
 
-    console.log("Initializing lava lamp with marching cubes");
+        // Setup renderer with optimized settings
+        gl.setPixelRatio(
+          window.innerWidth < 800 ? 1 : Math.min(window.devicePixelRatio, 1.5)
+        );
+        gl.setClearColor(
+          new THREE.Color(backgroundColor.r, backgroundColor.g, backgroundColor.b),
+          1.0
+        );
 
-    // Setup camera at fixed maximum distance
-    camera.position.set(0, 0, 25);
-    camera.lookAt(0, 0, 0);
+        // Remove tone mapping for better performance
+        gl.toneMapping = THREE.NoToneMapping;
+        gl.toneMappingExposure = 1.2;
 
-    // Setup renderer with transparency support
-    gl.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    gl.setClearColor(
-      new THREE.Color(backgroundColor.r, backgroundColor.g, backgroundColor.b),
-      1.0
-    );
-    gl.toneMapping = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = 1.2;
+        // Create material with the custom shaders and color uniforms
+        const lavaMaterial = createLavaLampMaterial(baseColor, highlightColor);
 
-    // Create material with the custom shaders and color uniforms
-    const lavaMaterial = createLavaLampMaterial(baseColor, highlightColor);
+        // Create marching cubes instance
+        const effect = new MarchingCubes(
+          RESOLUTION,
+          lavaMaterial,
+          false,
+          false,
+          100000
+        );
 
-    // Create marching cubes instance
-    const effect = new MarchingCubes(
-      RESOLUTION,
-      lavaMaterial,
-      false,
-      false,
-      100000
-    );
+        // Add event listener to compute vertex normals only once per geometry update
+        effect.addEventListener('render', () => {
+          effect.geometry.computeVertexNormals();
+        });
 
-    // Default initial position
-    effect.position.set(0, 0, 0);
+        // Default initial position
+        effect.position.set(0, 0, 0);
 
-    // Set scale
-    effect.scale.set(
-      CONTAINER_RADIUS * 2.2,
-      CONTAINER_RADIUS * 2.2,
-      CONTAINER_RADIUS * 2.2
-    );
+        // Set scale
+        effect.scale.set(
+          CONTAINER_RADIUS * 2.2,
+          CONTAINER_RADIUS * 2.2,
+          CONTAINER_RADIUS * 2.2
+        );
 
-    effect.enableUvs = false;
-    effect.enableColors = false;
-    effect.isolation = ISOLATION;
+        effect.enableUvs = false;
+        effect.enableColors = false;
+        effect.isolation = ISOLATION;
 
-    // Initialize with random positions
-    for (let i = 0; i < NUM_METABALLS; i++) {
-      prevDirX[i] = (Math.random() * 0.4 - 0.2);
-      prevDirY[i] = (Math.random() * 0.4 - 0.2);
-      prevDirZ[i] = (Math.random() * 0.4 - 0.2);
+        // Initialize with random positions
+        for (let i = 0; i < NUM_METABALLS; i++) {
+          prevDirX[i] = (Math.random() * 0.4 - 0.2);
+          prevDirY[i] = (Math.random() * 0.4 - 0.2);
+          prevDirZ[i] = (Math.random() * 0.4 - 0.2);
+        }
+
+        scene.add(effect);
+        marchingCubesRef.current = effect;
+
+        // Create lighting
+        createLighting(scene);
+
+        // Start simulation - properly using simRef.current
+        simRef.current.clock.start();
+        simRef.current.initialized = true;
+
+        // Run initial update
+        updateMetaballs(
+          effect,
+          simRef.current.time,
+          NUM_METABALLS,
+          simRef.current.strength,
+          simRef.current.subtract
+        );
+
+        return () => {
+          if (marchingCubesRef.current) {
+            scene.remove(marchingCubesRef.current);
+            if (marchingCubesRef.current.material) {
+              marchingCubesRef.current.material.dispose();
+            }
+            if (marchingCubesRef.current.geometry) {
+              marchingCubesRef.current.geometry.dispose();
+            }
+          }
+        };
+      });
     }
-
-    scene.add(effect);
-    marchingCubesRef.current = effect;
-
-    // Create lighting
-    createLighting(scene);
-
-    // Start simulation
-    sim.clock.start();
-    sim.initialized = true;
-
-    // Run initial update
-    updateMetaballs(
-      effect,
-      sim.time,
-      NUM_METABALLS,
-      sim.strength,
-      sim.subtract
-    );
-
-    return () => {
-      if (marchingCubesRef.current) {
-        scene.remove(marchingCubesRef.current);
-        if (marchingCubesRef.current.material) {
-          marchingCubesRef.current.material.dispose();
-        }
-        if (marchingCubesRef.current.geometry) {
-          marchingCubesRef.current.geometry.dispose();
-        }
-      }
-    };
   }, [camera, gl, scene]);
 
   // Add this before your component definition
@@ -664,25 +686,25 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       const pz = centerZ + Math.sin(angle * 0.7) * orbitRadius * zElongation + supportJiggleZ;
 
       // Add the main metaball
-      effect.addBall(px, py, pz, strength * 0.8, subtract);
+      const balls = [];
+      balls.push([px, py, pz, strength * 0.8]);
 
       // Add 2-3 smaller neighboring balls to create non-spherical shapes
       // These create elongated "lobes" that make the metaball look stretched
-      effect.addBall(
+      balls.push([
         px + internalWarpX * 0.07,
         py + internalWarpY * 0.05,
         pz + internalWarpZ * 0.06,
-        strength * 0.5,
-        subtract
-      );
+        strength * 0.6, // Keep strength moderate
+      ]);
 
-      effect.addBall(
-        px - internalWarpX * 0.08,
-        py - internalWarpY * 0.06,
-        pz - internalWarpZ * 0.05,
-        strength * 0.45,
-        subtract
-      );
+      // Add small overlapping balls for smoother appearance
+      // DON'T add these extra balls for performance reasons
+      // effect.addBall(px + internalWarpX * 0.04, ...);
+      // effect.addBall(px - internalWarpX * 0.05, ...);
+
+      // One batched call instead of many individual calls
+      effect.addBalls(balls, subtract);
     }
 
     // Satellite metaballs - REDUCED COUNT and SIMPLIFIED MATH
@@ -899,100 +921,62 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     effect.update();
   };
 
-  // Animation with useFrame
+  // Initialize accumulator in the component, before useFrame
+  const simAccumulator = useRef(0);
+
+  // Modified useFrame implementation
   useFrame((state, delta) => {
     const sim = simRef.current;
     if (!sim.initialized) return;
 
-    // CRITICAL: Skip all animation when freezing for restore
-    if (sim.freezeAnimation) {
-      return;
-    }
+    // Skip all animation when freezing
+    if (sim.freezeAnimation) return;
 
-    // Update 3D mouse position using raycasting
+    // Update mouse position - keep this outside throttling
     if (mousePos.current) {
       raycaster.current.setFromCamera(mousePos.current, camera);
-
-      // Create a plane at z=0 to intersect with
       const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
       const intersectPoint = new THREE.Vector3();
-
       raycaster.current.ray.intersectPlane(plane, intersectPoint);
-
-      // Scale to fit in our scene
       intersectPoint.divideScalar(10);
       mouse3D.current = intersectPoint;
     }
 
-    // Calculate time with frame-rate independence
+    // Get effect reference
+    const effect = marchingCubesRef.current;
+    if (!effect) return;
+
+    // Current time for animation
     const currentTime = sim.clock.getElapsedTime();
 
-    // PERFORMANCE: Update FPS counter only occasionally
-    sim.frameCount++;
-    if (currentTime - sim.lastFpsUpdate > 0.5) { // Update every half second
-      setStats({
-        fps: Math.round(sim.frameCount / (currentTime - sim.lastFpsUpdate))
-      });
-      sim.frameCount = 0;
-      sim.lastFpsUpdate = currentTime;
-    }
+    // Simple position updates occur every frame
+    effect.position.x = Math.sin(currentTime * 0.2) * 0.1;
+    effect.position.y = Math.sin(currentTime * 0.1) * 0.05;
+    effect.position.z = Math.sin(currentTime * 0.17) * 0.1;
 
-    // CRITICAL PERFORMANCE: Skip frames when needed to maintain performance
-    // Only process every other frame when performance is suffering
-    if (stats.fps < 20 && sim.frameCount % 2 !== 0) {
-      return; // Skip this frame
-    }
+    // Simple rotation
+    effect.rotation.y += 0.002;
 
-    // Calculate delta time with clamping to avoid spikes
-    const deltaTime = Math.min(0.1, currentTime - sim.lastTime);
-    sim.lastTime = currentTime;
+    // THROTTLED UPDATES for heavy computation
+    simAccumulator.current += delta;
+    if (simAccumulator.current >= SIM_STEP) {
+      simAccumulator.current -= SIM_STEP;
 
-    // Use fixed-timestep updates for more stability
-    sim.time += deltaTime * sim.speed;
+      // Update FPS counter (moved inside throttled section)
+      sim.frameCount++;
+      if (currentTime - sim.lastFpsUpdate > 0.5) {
+        setStats({
+          fps: Math.round(sim.frameCount / (currentTime - sim.lastFpsUpdate))
+        });
+        sim.frameCount = 0;
+        sim.lastFpsUpdate = currentTime;
+      }
 
-    // Simplified temperature calculation
-    sim.baseTemp = 0.5 + 0.3 * Math.sin(currentTime * 0.1);
+      // CRITICAL: Use fixed step size for stability
+      sim.time += SIM_STEP * sim.speed;
 
-    // Update marching cubes metaballs
-    const effect = marchingCubesRef.current;
-    if (effect) {
-      // Add a high-frequency jiggling component to the overall position
-      const jiggleAmplitude = 0.05 * JIGGLE_INTENSITY;
-      const jiggleSpeed = 5.0;
-
-      const jitterX = jiggleAmplitude * Math.sin(currentTime * jiggleSpeed * 1.1);
-      const jitterY = jiggleAmplitude * Math.sin(currentTime * jiggleSpeed * 0.9);
-      const jitterZ = jiggleAmplitude * Math.sin(currentTime * jiggleSpeed * 1.3);
-
-      // Combine smooth movement with high-frequency jitter
-      const targetX = Math.sin(currentTime * 0.2) * 0.5 + jitterX; // INCREASED from 0.4
-      const targetY = Math.sin(currentTime * 0.1) * 0.25 + jitterY; // REDUCED from 0.3
-      const targetZ = Math.sin(currentTime * 0.17) * 0.45 + jitterZ; // INCREASED from 0.3
-
-      const damping = 0.1;
-      effect.position.x += (targetX - effect.position.x) * damping;
-      effect.position.y += (targetY - effect.position.y) * damping;
-      effect.position.z += (targetZ - effect.position.z) * damping;
-
-      // Add additional safety check to prevent boundary crossing
-      effect.position.x = Math.max(-0.4, Math.min(0.4, effect.position.x));
-      effect.position.y = Math.max(-0.3, Math.min(0.3, effect.position.y));
-      effect.position.z = Math.max(-0.3, Math.min(0.3, effect.position.z));
-
-      // Simpler rotation update
-      effect.rotation.y += (Math.sin(currentTime * 0.15) * 0.15 - effect.rotation.y) * damping;
-
-      // Simplified isolation adjustment
-      effect.isolation = ISOLATION - (sim.baseTemp - 0.5) * 20;
-
-      // Update metaballs
-      updateMetaballs(
-        effect,
-        sim.time,
-        NUM_METABALLS,
-        sim.strength,
-        sim.subtract
-      );
+      // Update the metaballs - this is the heaviest computation
+      updateMetaballs(effect, sim.time, NUM_METABALLS, sim.strength, sim.subtract);
     }
   });
 
@@ -1047,6 +1031,7 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
   // Move your buttons inside the existing Html component
   return (
     <>
+      <Stats></Stats>
       <OrbitControls
         enableZoom={false}
         enablePan={true}
