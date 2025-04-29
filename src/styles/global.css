@@ -1,28 +1,20 @@
-body {
-  margin: 0;
-  padding: 0;
-  font-family: 'Arial', sans-serif;
-  background-color: #050505;
-  color: white;
-  overflow-x: hidden;
-}
+/* Add these rules to your global.css */
 
 .app-container {
   position: relative;
-  min-height: 100vh;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
-.content-overlay {
-  position: relative;
-  z-index: 1;
-  pointer-events: auto;
+/* Ensure buttons have proper pointer events */
+button {
+  pointer-events: auto !important;
 }
 
-/* Make text more readable against dark background */
-h1, h2, h3, h4, h5, h6 {
-  color: #b292ff;
-}
-
-p {
-  color: rgba(255, 255, 255, 0.8);
+/* Make fixed position elements actually on top */
+.color-controls {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: auto !important;
 }

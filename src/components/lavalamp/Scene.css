@@ -92,3 +92,12 @@
     padding: 15px;
   }
 }
+
+.dragging-hue,
+.dragging-satval {
+  cursor: grabbing !important;
+}
+
+.color-picker-container {
+  isolation: isolate; /* Creates a stacking context */
+}

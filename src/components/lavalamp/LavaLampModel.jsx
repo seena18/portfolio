@@ -31,15 +31,74 @@ const DISTORTION_AMOUNT = 0.1; // Reduced from 0.15 for smoother surface
 const JIGGLE_INTENSITY = 0.6; // Reduced from 1.0
 
 // Add this constant for mouse interaction
-const MOUSE_REPULSION_STRENGTH = 2.0; // Strength of the mouse repulsion effect
+const MOUSE_REPULSION_STRENGTH = 0.3; // Reduced from 4.0 to 0.3
+const MOUSE_TRAIL_LENGTH = 4; // Fewer points in trail
+const MOUSE_TRAIL_DECAY = 0.6; // Faster decay
+const MOUSE_TRAIL_WIDTH = 0.15; // Width of the cutting trail
 
 // First, import navigation capabilities
 import { useNavigate } from 'react-router-dom';
+// First, modify your initialization effect to make a cleaner separation between
+// material creation and simulation state
 
-const LavaLampModel = ({ portfolioData }) => {
+// Add this function outside the component to keep shader code consistent
+const createLavaLampMaterial = (baseColor, highlightColor) => {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uBaseColor: { value: new THREE.Vector3(baseColor.r, baseColor.g, baseColor.b) },
+      uHighlightColor: { value: new THREE.Vector3(highlightColor.r, highlightColor.g, highlightColor.b) }
+    },
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vViewPosition;
+      
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vViewPosition = -mvPosition.xyz;
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vNormal;
+      varying vec3 vViewPosition;
+      uniform vec3 uBaseColor;
+      uniform vec3 uHighlightColor;
+      
+      void main() {
+        // Use uniform colors instead of hardcoded values
+        vec3 baseColor = uBaseColor;
+        vec3 highlightColor = uHighlightColor;
+        
+        // Calculate fresnel effect for edge highlighting
+        vec3 viewDir = normalize(vViewPosition);
+        float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.0);
+        
+        // Create gradient based on viewing angle
+        vec3 finalColor = mix(baseColor, highlightColor, fresnel);
+        
+        // Less translucent overall
+        float opacity = 0.95 - fresnel * 0.15;
+        
+        gl_FragColor = vec4(finalColor, opacity);
+      }
+    `,
+    transparent: true,
+    blending: THREE.NormalBlending,
+    depthWrite: true,
+    side: THREE.DoubleSide
+  });
+};
+const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioData }) => {
   // Add navigation hook
   const navigate = useNavigate();
-  
+  const mouseTrail = useRef([]);
+  const mouseVelocity = useRef(new THREE.Vector2(0, 0));
+  const prevMousePos = useRef(new THREE.Vector2(0, 0));
+  const isDragging = useRef(false);
+  // Add color state variables
+
+
   // Define portfolio sections for navigation
   const portfolioSections = [
     { id: 0, name: "Projects", path: "/projects", color: new THREE.Color(0x111111) },
@@ -47,12 +106,12 @@ const LavaLampModel = ({ portfolioData }) => {
     { id: 2, name: "Skills", path: "/skills", color: new THREE.Color(0x333333) },
     { id: 3, name: "Contact", path: "/contact", color: new THREE.Color(0x444444) }
   ];
-  
+
   // Add state for hover feedback
   const [hoveredSection, setHoveredSection] = useState(null);
   const blobPositions = useRef(Array(NUM_METABALLS).fill(new THREE.Vector3()));
   const blobStrengths = useRef(Array(NUM_METABALLS).fill(0));
-  
+
   const { camera, gl, scene } = useThree();
   const [stats, setStats] = useState({ fps: 0 });
 
@@ -77,7 +136,7 @@ const LavaLampModel = ({ portfolioData }) => {
     lastTime: 0,
     time: Math.random() * 100,
     speed: 0.15, // Slightly slower for more controlled movement
-    strength: 1.0, // Increased from 2.0
+    strength: .8, // Increased from 2.0
     subtract: 12, // Decreased from 30
     baseTemp: 0.1,
     cycleSpeed: 0.02, // Slower cycles for more dramatic blob ejection/return
@@ -94,70 +153,73 @@ const LavaLampModel = ({ portfolioData }) => {
     lastFpsUpdate: 0
   });
 
-  // Initialize once
+  // Add these new state variables to store positioning data
+  // const [savedPositionState, setSavedPositionState] = useState(null);
+
+  // Update your savedPositionState to better preserve metaball positions
+
+
+  useEffect(() => {
+    if (!marchingCubesRef.current) return;
+
+    try {
+      // Just update material uniforms directly - no rebuilding
+      if (marchingCubesRef.current.material &&
+        marchingCubesRef.current.material.uniforms) {
+
+        // Update color values
+        marchingCubesRef.current.material.uniforms.uBaseColor.value.set(
+          baseColor.r, baseColor.g, baseColor.b
+        );
+
+        marchingCubesRef.current.material.uniforms.uHighlightColor.value.set(
+          highlightColor.r, highlightColor.g, highlightColor.b
+        );
+
+        // Mark material as needing update
+        marchingCubesRef.current.material.needsUpdate = true;
+
+        // Update background color
+        gl.setClearColor(
+          new THREE.Color(backgroundColor.r, backgroundColor.g, backgroundColor.b),
+          1.0
+        );
+
+        console.log("Updated colors via uniforms");
+      } else {
+        console.warn("Material not ready for uniform updates");
+      }
+    } catch (error) {
+      console.error("Error updating material colors:", error);
+    }
+  }, [baseColor, highlightColor, backgroundColor]);
+
+  // In the initialization effect, improve the restoration logic
   useEffect(() => {
     const sim = simRef.current;
+
+    // Only initialize if needed
     if (sim.initialized) return;
 
     console.log("Initializing lava lamp with marching cubes");
 
     // Setup camera at fixed maximum distance
-    camera.position.set(0, 0, 25); // Increased from 20 to compensate for larger container
+    camera.position.set(0, 0, 25);
     camera.lookAt(0, 0, 0);
 
     // Setup renderer with transparency support
     gl.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    gl.setClearColor(0xffffff, 1.0);
+    gl.setClearColor(
+      new THREE.Color(backgroundColor.r, backgroundColor.g, backgroundColor.b),
+      1.0
+    );
     gl.toneMapping = THREE.ACESFilmicToneMapping;
     gl.toneMappingExposure = 1.2;
 
-    // Create marching cubes material - BLACK metaballs
-    const fragmentShader = `
-  varying vec3 vNormal;
-  varying vec3 vViewPosition;
-  
-  void main() {
-    vec3 baseColor = vec3(0.02, 0.02, 0.02); // Near-black base
-    vec3 highlightColor = vec3(0.4, 0.4, 0.4); // Brighter highlights
-    
-    // Calculate fresnel effect for edge highlighting
-    vec3 viewDir = normalize(vViewPosition);
-    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.0);
-    
-    // Create gradient based on viewing angle
-    vec3 finalColor = mix(baseColor, highlightColor, fresnel);
-    
-    // More opaque overall
-    float opacity = 0.9 - fresnel * 0.2;
-    
-    gl_FragColor = vec4(finalColor, opacity);
-  }
-`;
+    // Create material with the custom shaders and color uniforms
+    const lavaMaterial = createLavaLampMaterial(baseColor, highlightColor);
 
-    const vertexShader = `
-  varying vec3 vNormal;
-  varying vec3 vViewPosition;
-  
-  void main() {
-    vNormal = normalize(normalMatrix * normal);
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    vViewPosition = -mvPosition.xyz;
-    gl_Position = projectionMatrix * mvPosition;
-  }
-`;
-
-    // Create material with the custom shaders
-    const lavaMaterial = new THREE.ShaderMaterial({
-      uniforms: {},
-      vertexShader: vertexShader,
-      fragmentShader: fragmentShader,
-      transparent: true,
-      blending: THREE.NormalBlending, // Changed from AdditiveBlending
-      depthWrite: true, // Enable depth writing
-      side: THREE.DoubleSide // Render both sides
-    });
-
-    // Create marching cubes instance with improved parameters
+    // Create marching cubes instance
     const effect = new MarchingCubes(
       RESOLUTION,
       lavaMaterial,
@@ -165,55 +227,312 @@ const LavaLampModel = ({ portfolioData }) => {
       false,
       100000
     );
+
+    // Default initial position
     effect.position.set(0, 0, 0);
 
-    // Increase the scale to reflect the larger container
+    // Set scale
     effect.scale.set(
-      CONTAINER_RADIUS * 2.2, // Increased scale factor from 2.0
-      CONTAINER_RADIUS * 2.2, // Increased scale factor from 2.0
-      CONTAINER_RADIUS * 2.2  // Increased scale factor from 2.0
+      CONTAINER_RADIUS * 2.2,
+      CONTAINER_RADIUS * 2.2,
+      CONTAINER_RADIUS * 2.2
     );
 
     effect.enableUvs = false;
     effect.enableColors = false;
     effect.isolation = ISOLATION;
 
-    scene.add(effect);
-    marchingCubesRef.current = effect;
-
-    // Create lighting - modified for black metaballs on white background
-    createLighting(scene);
-
-    // Randomize initial positions of satellite metaballs
+    // Initialize with random positions
     for (let i = 0; i < NUM_METABALLS; i++) {
-      // Random initial positions within safe bounds
       prevDirX[i] = (Math.random() * 0.4 - 0.2);
       prevDirY[i] = (Math.random() * 0.4 - 0.2);
       prevDirZ[i] = (Math.random() * 0.4 - 0.2);
     }
 
-    // Start simulation with random initial state
+    scene.add(effect);
+    marchingCubesRef.current = effect;
+
+    // Create lighting
+    createLighting(scene);
+
+    // Start simulation
     sim.clock.start();
     sim.initialized = true;
+
+    // Run initial update
+    updateMetaballs(
+      effect,
+      sim.time,
+      NUM_METABALLS,
+      sim.strength,
+      sim.subtract
+    );
 
     return () => {
       if (marchingCubesRef.current) {
         scene.remove(marchingCubesRef.current);
+        if (marchingCubesRef.current.material) {
+          marchingCubesRef.current.material.dispose();
+        }
+        if (marchingCubesRef.current.geometry) {
+          marchingCubesRef.current.geometry.dispose();
+        }
       }
     };
   }, [camera, gl, scene]);
+
+  // Add this before your component definition
+  function updateMaterialColor(material, baseColor, highlightColor, gl, backgroundColor) {
+    // Update uniforms directly without recreating material
+    if (material && material.uniforms) {
+      material.uniforms.uBaseColor.value.set(baseColor.r, baseColor.g, baseColor.b);
+      material.uniforms.uHighlightColor.value.set(highlightColor.r, highlightColor.g, highlightColor.b);
+      material.needsUpdate = true;
+
+      // Update background without recreation
+      gl.setClearColor(
+        new THREE.Color(backgroundColor.r, backgroundColor.g, backgroundColor.b),
+        1.0
+      );
+      return true;
+    }
+    return false;
+  }
+
+  // Inside your component, add a separate effect JUST for color changes
+  // This effect should run INDEPENDENTLY of the main initialization effect
+  useEffect(() => {
+    if (!marchingCubesRef.current || !marchingCubesRef.current.material) return;
+
+    console.log("Updating colors only - no rebuild");
+
+    // Try to update just the material colors
+    const success = updateMaterialColor(
+      marchingCubesRef.current.material,
+      baseColor,
+      highlightColor,
+      gl,
+      backgroundColor
+    );
+
+    if (success) {
+      console.log("Color update successful without rebuilding");
+      // No rebuild needed
+    } else {
+      console.warn("Direct color update failed, falling back to rebuild");
+      // Only if direct update fails, prepare for rebuild
+      if (marchingCubesRef.current) {
+        // Save state before rebuild
+        // setSavedPositionState({
+        //   position: marchingCubesRef.current.position.clone(),
+        //   rotation: marchingCubesRef.current.rotation.clone(),
+        //   isolation: marchingCubesRef.current.isolation,
+        //   time: simRef.current.time,
+        //   simState: {
+        //     ...simRef.current,
+        //     // Create a deep copy of important state
+        //     positions: simRef.current.positions?.map(pos => ({ ...pos })) || [],
+        //     strengths: [...(simRef.current.strengths || [])],
+        //     lastTime: simRef.current.clock.getElapsedTime()
+        //   },
+        //   prevDirX: [...prevDirX],
+        //   prevDirY: [...prevDirY],
+        //   prevDirZ: [...prevDirZ],
+        //   metaballPositions: blobPositions.current?.map(pos => pos.clone()) || [],
+        //   metaballStrengths: [...(blobStrengths.current || [])]
+        // });
+
+        // Trigger rebuild only as last resort
+        // setEffectKey(prev => prev + 1);
+      }
+    }
+  }, [baseColor, highlightColor, backgroundColor]);
+
+  // Add a separate effect for recreating the material entirely when base or highlight colors change
+  useEffect(() => {
+    if (!marchingCubesRef.current) return;
+
+    try {
+      const effect = marchingCubesRef.current;
+
+      // Create a completely new material
+      const newMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uBaseColor: { value: new THREE.Vector3(baseColor.r, baseColor.g, baseColor.b) },
+          uHighlightColor: { value: new THREE.Vector3(highlightColor.r, highlightColor.g, highlightColor.b) }
+        },
+        vertexShader: `
+          varying vec3 vNormal;
+          varying vec3 vViewPosition;
+          
+          void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            vViewPosition = -mvPosition.xyz;
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        `,
+        fragmentShader: `
+          varying vec3 vNormal;
+          varying vec3 vViewPosition;
+          uniform vec3 uBaseColor;
+          uniform vec3 uHighlightColor;
+          
+          void main() {
+            // Use uniform colors instead of hardcoded values
+            vec3 baseColor = uBaseColor;
+            vec3 highlightColor = uHighlightColor;
+            
+            // Calculate fresnel effect for edge highlighting
+            vec3 viewDir = normalize(vViewPosition);
+            float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.0);
+            
+            // Create gradient based on viewing angle
+            vec3 finalColor = mix(baseColor, highlightColor, fresnel);
+            
+            // Less translucent overall
+            float opacity = 0.95 - fresnel * 0.15;
+            
+            gl_FragColor = vec4(finalColor, opacity);
+          }
+        `,
+        transparent: true,
+        blending: THREE.NormalBlending,
+        depthWrite: true,
+        side: THREE.DoubleSide
+      });
+
+      // Dispose old material and replace with new
+      marchingCubesRef.current.material.dispose();
+      marchingCubesRef.current.material = newMaterial;
+
+      // Update background color
+      gl.setClearColor(
+        new THREE.Color(backgroundColor.r, backgroundColor.g, backgroundColor.b),
+        1.0
+      );
+
+      return; // Exit early, no need to rebuild
+    } catch (error) {
+      console.error("Error updating material:", error);
+    }
+  }, [baseColor, highlightColor]);
+
+  // Fixed color conversion functions
+  const hexToRgb = (hex) => {
+    // Remove the # if present
+    const cleanHex = hex.replace('#', '');
+
+    return {
+      r: parseInt(cleanHex.substring(0, 2), 16) / 255,
+      g: parseInt(cleanHex.substring(2, 4), 16) / 255,
+      b: parseInt(cleanHex.substring(4, 6), 16) / 255
+    };
+  };
+
+  const rgbToHex = (r, g, b) => {
+    const toHex = (c) => {
+      const hex = Math.round(Math.max(0, Math.min(255, c * 255))).toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    };
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  };
+
+  // Replace your existing ColorMenu component with this enhanced version
 
   // Add this after your first useEffect
   useEffect(() => {
     // Mouse interaction event handlers
     const handleMouseMove = (event) => {
       // Convert mouse position to normalized device coordinates (-1 to +1)
-      mousePos.current.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mousePos.current.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      const newMouseX = (event.clientX / window.innerWidth) * 2 - 1;
+      const newMouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      // Calculate velocity (how fast the mouse is moving)
+      mouseVelocity.current.x = newMouseX - mousePos.current.x;
+      mouseVelocity.current.y = newMouseY - mousePos.current.y;
+
+      // Store previous mouse position before updating
+      prevMousePos.current.x = mousePos.current.x;
+      prevMousePos.current.y = mousePos.current.y;
+
+      // Update current mouse position
+      mousePos.current.x = newMouseX;
+      mousePos.current.y = newMouseY;
+
+      // If dragging, add to the trail
+      if (isDragging.current) {
+        // Update raycaster with new mouse position
+        raycaster.current.setFromCamera(mousePos.current, camera);
+
+        // Create a plane at z=0 to intersect with
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        const intersectPoint = new THREE.Vector3();
+
+        raycaster.current.ray.intersectPlane(plane, intersectPoint);
+
+        // Scale to fit in our scene
+        intersectPoint.divideScalar(10);
+
+        // Only add new point if it's significantly different from the last one
+        const trailLength = mouseTrail.current.length;
+        const speed = Math.sqrt(
+          mouseVelocity.current.x * mouseVelocity.current.x +
+          mouseVelocity.current.y * mouseVelocity.current.y
+        );
+
+        if (trailLength === 0 ||
+          (trailLength > 0 &&
+            intersectPoint.distanceTo(mouseTrail.current[trailLength - 1].point) > 0.01)) {
+
+          // Add new point to trail with full strength
+          mouseTrail.current.push({
+            point: intersectPoint.clone(),
+            strength: MOUSE_REPULSION_STRENGTH * (0.5 + Math.min(speed * 5, 1.5)) // Stronger effect when moving faster
+          });
+
+          // Limit trail length
+          if (mouseTrail.current.length > MOUSE_TRAIL_LENGTH) {
+            mouseTrail.current.shift();
+          }
+        }
+      }
     };
 
-    const handleMouseDown = () => setMouseActive(true);
-    const handleMouseUp = () => setMouseActive(false);
+    const handleMouseDown = (event) => {
+      // Only activate on left-click
+      if (event.button === 0) {
+        setMouseActive(true);
+        isDragging.current = true;
+
+        // Clear previous trail
+        mouseTrail.current = [];
+
+        // Initialize trail with current position
+        raycaster.current.setFromCamera(mousePos.current, camera);
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        const intersectPoint = new THREE.Vector3();
+
+        if (raycaster.current.ray.intersectPlane(plane, intersectPoint)) {
+          intersectPoint.divideScalar(10);
+          mouseTrail.current.push({
+            point: intersectPoint.clone(),
+            strength: MOUSE_REPULSION_STRENGTH
+          });
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      setMouseActive(false);
+      isDragging.current = false;
+
+      // Start decaying trail points but don't clear immediately for a smoother effect
+      mouseTrail.current = mouseTrail.current.map(point => ({
+        ...point,
+        decaying: true // Mark for decay
+      }));
+    };
 
     // Add event listeners
     window.addEventListener('mousemove', handleMouseMove);
@@ -226,7 +545,7 @@ const LavaLampModel = ({ portfolioData }) => {
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, []);
+  }, [camera]);
 
   // Create lighting for the scene
   const createLighting = (scene) => {
@@ -255,6 +574,7 @@ const LavaLampModel = ({ portfolioData }) => {
 
   // Process metaballs for marching cubes - OPTIMIZED
   const updateMetaballs = (effect, time, numMetaballs, strength, subtract) => {
+    // Reset without conditional checks
     effect.reset();
 
     // Add new non-spherical warping frequencies
@@ -329,7 +649,7 @@ const LavaLampModel = ({ portfolioData }) => {
       const supportJiggleZ = jiggleZ * (1 + 0.5 * Math.sin(i * 1.3));
 
       // Create internal warp patterns unique to each support ball
-      const internalWarpPhase = time * 1.2 + i * 1.7;
+      const internalWarpPhase = time * 1.2 + i * 2.1;
       const internalWarpX = INTERNAL_WARP_STRENGTH * Math.sin(internalWarpPhase * 1.1) * Math.cos(internalWarpPhase * 0.7);
       const internalWarpY = INTERNAL_WARP_STRENGTH * Math.sin(internalWarpPhase * 0.9) * Math.cos(internalWarpPhase * 1.3);
       const internalWarpZ = INTERNAL_WARP_STRENGTH * Math.sin(internalWarpPhase * 1.3) * Math.cos(internalWarpPhase * 0.5);
@@ -541,19 +861,34 @@ const LavaLampModel = ({ portfolioData }) => {
       effect.addBall(safeFx, safeFy, safeFz, strength * 0.4, subtract); // Reduced from 0.5
     }
 
-    // Add mouse interaction if active
-    if (mouseActive && mouse3D.current) {
-      // Convert normalized mouse position to marching cubes space (0-1)
-      const mx = (mouse3D.current.x + 1) * 0.5;
-      const my = (mouse3D.current.y + 1) * 0.5;
-      const mz = (mouse3D.current.z + 1) * 0.5;
-
-      // Add a negative strength ball at mouse position to create a "cutting" effect
-      effect.addBall(
-        mx, my, mz,
-        -strength * MOUSE_REPULSION_STRENGTH,
-        subtract
-      );
+    // Process mouse trail for cutting effect
+    if (mouseTrail.current.length > 0) {
+      // Process each point in the trail
+      for (let i = mouseTrail.current.length - 1; i >= 0; i--) {
+        const trailPoint = mouseTrail.current[i];
+        
+        // Decay handling
+        if (trailPoint.decaying) {
+          trailPoint.strength *= 0.7;
+          if (trailPoint.strength < 0.3) {
+            mouseTrail.current.splice(i, 1);
+            continue;
+          }
+        }
+        
+        // Convert to marching cubes space (0-1)
+        const mx = (trailPoint.point.x + 1) * 0.5;
+        const my = (trailPoint.point.y + 1) * 0.5;
+        const mz = (trailPoint.point.z + 1) * 0.5;
+        
+        // GENTLE MOUSE INTERACTION
+        // Just add a small indent where mouse is - no cutting
+        effect.addBall(
+          mx, my, mz,
+          -strength * trailPoint.strength * 0.2, // Very gentle effect
+          subtract
+        );
+      }
     }
 
     // Update the marching cubes mesh
@@ -564,6 +899,11 @@ const LavaLampModel = ({ portfolioData }) => {
   useFrame((state, delta) => {
     const sim = simRef.current;
     if (!sim.initialized) return;
+
+    // CRITICAL: Skip all animation when freezing for restore
+    if (sim.freezeAnimation) {
+      return;
+    }
 
     // Update 3D mouse position using raycasting
     if (mousePos.current) {
@@ -658,7 +998,7 @@ const LavaLampModel = ({ portfolioData }) => {
       if (hoveredSection !== null && hoveredSection >= 0) {
         const sectionIndex = hoveredSection % portfolioSections.length;
         navigate(portfolioSections[sectionIndex].path);
-        
+
         // Add a visual effect for feedback
         const effect = marchingCubesRef.current;
         if (effect) {
@@ -670,7 +1010,7 @@ const LavaLampModel = ({ portfolioData }) => {
         }
       }
     };
-    
+
     window.addEventListener('click', handleClick);
     return () => window.removeEventListener('click', handleClick);
   }, [hoveredSection, navigate]);
@@ -681,18 +1021,18 @@ const LavaLampModel = ({ portfolioData }) => {
       <div className="section-labels">
         {hoveredSection !== null && hoveredSection >= 0 && (
           <div className="section-label"
-               style={{
-                 position: 'absolute',
-                 left: '50%',
-                 top: '70%',
-                 transform: 'translateX(-50%)',
-                 backgroundColor: 'rgba(0,0,0,0.7)',
-                 color: 'white',
-                 padding: '10px 20px',
-                 borderRadius: '5px',
-                 fontWeight: 'bold',
-                 zIndex: 100
-               }}>
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '70%',
+              transform: 'translateX(-50%)',
+              backgroundColor: 'rgba(0,0,0,0.7)',
+              color: 'white',
+              padding: '10px 20px',
+              borderRadius: '5px',
+              fontWeight: 'bold',
+              zIndex: 100
+            }}>
             {portfolioSections[hoveredSection % portfolioSections.length].name}
           </div>
         )}
@@ -700,15 +1040,15 @@ const LavaLampModel = ({ portfolioData }) => {
     );
   };
 
-  // Add this to the component return
+  // Move your buttons inside the existing Html component
   return (
     <>
       <Stats />
-      <OrbitControls 
-        enableZoom={false} 
+      <OrbitControls
+        enableZoom={false}
         enablePan={true}
         enableRotate={false}
-        autoRotate={true} // Keep auto-rotation
+        autoRotate={true}
         autoRotateSpeed={0.5}
         minDistance={25}
         maxDistance={25}
@@ -718,9 +1058,112 @@ const LavaLampModel = ({ portfolioData }) => {
       <Environment preset="studio" intensity={0.3} />
       <Html fullscreen>
         <SectionLabels />
+
       </Html>
     </>
   );
 };
+const BlobNavigation = () => {
+  const [hovered, setHovered] = useState(null);
 
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: '40px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      display: 'flex',
+      gap: '30px',
+      zIndex: 1000,
+      pointerEvents: 'auto'
+    }}>
+      {/* About Me Blob */}
+      <div
+        onMouseEnter={() => setHovered('about')}
+        onMouseLeave={() => setHovered(null)}
+        onClick={() => navigate('/about')}
+        style={{
+          width: '120px',
+          height: '120px',
+          borderRadius: '60% 40% 70% 30% / 50% 60% 40% 50%',
+          background: `rgba(${baseColor.r * 255}, ${baseColor.g * 255}, ${baseColor.b * 255}, 0.9)`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          transition: 'all 0.5s ease-in-out',
+          transform: hovered === 'about' ? 'scale(1.1)' : 'scale(1)',
+          animation: 'blob-morph 8s ease-in-out infinite',
+          boxShadow: `0 0 15px rgba(${highlightColor.r * 255}, ${highlightColor.g * 255}, ${highlightColor.b * 255}, 0.5)`,
+        }}
+      >
+        <span style={{
+          color: `rgb(${highlightColor.r * 255}, ${highlightColor.g * 255}, ${highlightColor.b * 255})`,
+          fontFamily: 'Arial, sans-serif',
+          fontWeight: 'bold',
+          fontSize: '16px',
+          textAlign: 'center',
+          textShadow: `0 0 5px rgba(${baseColor.r * 255}, ${baseColor.g * 255}, ${baseColor.b * 255}, 0.5)`,
+        }}>
+          About Me
+        </span>
+      </div>
+
+      {/* Projects Blob */}
+      <div
+        onMouseEnter={() => setHovered('projects')}
+        onMouseLeave={() => setHovered(null)}
+        onClick={() => navigate('/projects')}
+        style={{
+          width: '120px',
+          height: '120px',
+          borderRadius: '40% 60% 30% 70% / 60% 40% 70% 30%',
+          background: `rgba(${baseColor.r * 255}, ${baseColor.g * 255}, ${baseColor.b * 255}, 0.9)`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          transition: 'all 0.5s ease-in-out',
+          transform: hovered === 'projects' ? 'scale(1.1)' : 'scale(1)',
+          animation: 'blob-morph 8s ease-in-out infinite 2s',
+          boxShadow: `0 0 15px rgba(${highlightColor.r * 255}, ${highlightColor.g * 255}, ${highlightColor.b * 255}, 0.5)`,
+        }}
+      >
+        <span style={{
+          color: `rgb(${highlightColor.r * 255}, ${highlightColor.g * 255}, ${highlightColor.b * 255})`,
+          fontFamily: 'Arial, sans-serif',
+          fontWeight: 'bold',
+          fontSize: '16px',
+          textAlign: 'center',
+          textShadow: `0 0 5px rgba(${baseColor.r * 255}, ${baseColor.g * 255}, ${baseColor.b * 255}, 0.5)`,
+        }}>
+          Projects
+        </span>
+      </div>
+
+      {/* Add CSS animation keyframes */}
+      <style>
+        {`
+          @keyframes blob-morph {
+            0% {
+              border-radius: 60% 40% 70% 30% / 50% 60% 40% 50%;
+            }
+            25% {
+              border-radius: 50% 50% 40% 60% / 40% 60% 60% 40%;
+            }
+            50% {
+              border-radius: 40% 60% 60% 40% / 60% 40% 50% 50%;
+            }
+            75% {
+              border-radius: 60% 40% 50% 50% / 30% 60% 70% 40%;
+            }
+            100% {
+              border-radius: 60% 40% 70% 30% / 50% 60% 40% 50%;
+            }
+          }
+        `}
+      </style>
+    </div>
+  );
+};
 export default LavaLampModel;
