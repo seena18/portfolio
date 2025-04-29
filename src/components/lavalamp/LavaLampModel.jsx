@@ -870,7 +870,7 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       // Process each point in the trail
       for (let i = mouseTrail.current.length - 1; i >= 0; i--) {
         const trailPoint = mouseTrail.current[i];
-        
+
         // Decay handling
         if (trailPoint.decaying) {
           trailPoint.strength *= 0.7;
@@ -879,12 +879,12 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
             continue;
           }
         }
-        
+
         // Convert to marching cubes space (0-1)
         const mx = (trailPoint.point.x + 1) * 0.5;
         const my = (trailPoint.point.y + 1) * 0.5;
         const mz = (trailPoint.point.z + 1) * 0.5;
-        
+
         // GENTLE MOUSE INTERACTION
         // Just add a small indent where mouse is - no cutting
         effect.addBall(
@@ -1047,7 +1047,6 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
   // Move your buttons inside the existing Html component
   return (
     <>
-      <Stats />
       <OrbitControls
         enableZoom={false}
         enablePan={true}

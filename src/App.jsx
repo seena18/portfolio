@@ -17,47 +17,47 @@ const colorThemes = [
   { name: "Sunset Glow", base: { r: 0.95, g: 0.5, b: 0.2 }, highlight: { r: 1.0, g: 0.8, b: 0.3 }, background: { r: 0.1, g: 0.05, b: 0.2 } },
   { name: "Dusk", base: { r: 0.7, g: 0.3, b: 0.5 }, highlight: { r: 0.9, g: 0.6, b: 0.3 }, background: { r: 0.15, g: 0.1, b: 0.25 } },
   { name: "Golden Hour", base: { r: 0.9, g: 0.6, b: 0.1 }, highlight: { r: 1.0, g: 0.8, b: 0.4 }, background: { r: 0.2, g: 0.1, b: 0.15 } },
-  
+
   // Ocean themes
   { name: "Deep Sea", base: { r: 0.1, g: 0.5, b: 0.8 }, highlight: { r: 0.4, g: 0.8, b: 0.9 }, background: { r: 0.05, g: 0.1, b: 0.2 } },
   { name: "Tropical Waters", base: { r: 0.2, g: 0.6, b: 0.8 }, highlight: { r: 0.3, g: 0.9, b: 0.7 }, background: { r: 0.05, g: 0.15, b: 0.3 } },
   { name: "Aquamarine", base: { r: 0.2, g: 0.8, b: 0.7 }, highlight: { r: 0.4, g: 1.0, b: 0.8 }, background: { r: 0.1, g: 0.2, b: 0.3 } },
-  
+
   // Forest themes
   { name: "Pine Forest", base: { r: 0.2, g: 0.5, b: 0.3 }, highlight: { r: 0.5, g: 0.8, b: 0.2 }, background: { r: 0.1, g: 0.2, b: 0.15 } },
   { name: "Moss Garden", base: { r: 0.3, g: 0.6, b: 0.2 }, highlight: { r: 0.7, g: 0.8, b: 0.3 }, background: { r: 0.1, g: 0.15, b: 0.1 } },
   { name: "Rainforest", base: { r: 0.15, g: 0.4, b: 0.2 }, highlight: { r: 0.4, g: 0.7, b: 0.3 }, background: { r: 0.05, g: 0.1, b: 0.05 } },
-  
+
   // Neon themes
   { name: "Cyberpunk", base: { r: 0.9, g: 0.1, b: 0.9 }, highlight: { r: 0.2, g: 0.9, b: 1.0 }, background: { r: 0.05, g: 0.0, b: 0.1 } },
   { name: "Neon Lights", base: { r: 0.2, g: 0.9, b: 0.6 }, highlight: { r: 1.0, g: 0.2, b: 0.8 }, background: { r: 0.05, g: 0.05, b: 0.1 } },
   { name: "Electric Blue", base: { r: 0.1, g: 0.3, b: 0.9 }, highlight: { r: 0.4, g: 0.8, b: 1.0 }, background: { r: 0.0, g: 0.05, b: 0.15 } },
-  
+
   // Pastel themes
   { name: "Cotton Candy", base: { r: 0.9, g: 0.7, b: 0.8 }, highlight: { r: 0.7, g: 0.8, b: 0.9 }, background: { r: 0.2, g: 0.2, b: 0.3 } },
   { name: "Soft Mint", base: { r: 0.7, g: 0.9, b: 0.8 }, highlight: { r: 0.9, g: 0.8, b: 0.7 }, background: { r: 0.2, g: 0.25, b: 0.2 } },
   { name: "Lavender Mist", base: { r: 0.8, g: 0.7, b: 0.9 }, highlight: { r: 0.9, g: 0.8, b: 1.0 }, background: { r: 0.2, g: 0.15, b: 0.25 } },
-  
+
   // Earth tones
   { name: "Desert Sand", base: { r: 0.9, g: 0.7, b: 0.5 }, highlight: { r: 0.7, g: 0.5, b: 0.3 }, background: { r: 0.2, g: 0.15, b: 0.1 } },
   { name: "Clay Pot", base: { r: 0.7, g: 0.4, b: 0.3 }, highlight: { r: 0.9, g: 0.6, b: 0.4 }, background: { r: 0.2, g: 0.1, b: 0.05 } },
   { name: "Coffee", base: { r: 0.5, g: 0.3, b: 0.2 }, highlight: { r: 0.7, g: 0.5, b: 0.3 }, background: { r: 0.15, g: 0.1, b: 0.05 } },
-  
+
   // Monochrome
   { name: "Silver", base: { r: 0.8, g: 0.8, b: 0.8 }, highlight: { r: 1.0, g: 1.0, b: 1.0 }, background: { r: 0.2, g: 0.2, b: 0.2 } },
   { name: "Charcoal", base: { r: 0.3, g: 0.3, b: 0.3 }, highlight: { r: 0.6, g: 0.6, b: 0.6 }, background: { r: 0.1, g: 0.1, b: 0.1 } },
   { name: "Cream", base: { r: 0.95, g: 0.92, b: 0.85 }, highlight: { r: 1.0, g: 1.0, b: 0.95 }, background: { r: 0.3, g: 0.28, b: 0.25 } },
-  
+
   // Vibrant themes
   { name: "Carnival", base: { r: 1.0, g: 0.2, b: 0.4 }, highlight: { r: 0.3, g: 0.9, b: 0.2 }, background: { r: 0.2, g: 0.0, b: 0.5 } },
   { name: "Summer Pop", base: { r: 1.0, g: 0.5, b: 0.0 }, highlight: { r: 0.0, g: 0.8, b: 1.0 }, background: { r: 0.0, g: 0.3, b: 0.6 } },
   { name: "Fruit Punch", base: { r: 0.9, g: 0.2, b: 0.3 }, highlight: { r: 1.0, g: 0.8, b: 0.2 }, background: { r: 0.2, g: 0.05, b: 0.1 } },
-  
+
   // Cool themes
   { name: "Moonlight", base: { r: 0.5, g: 0.5, b: 0.7 }, highlight: { r: 0.8, g: 0.8, b: 1.0 }, background: { r: 0.1, g: 0.1, b: 0.2 } },
   { name: "Glacier", base: { r: 0.6, g: 0.8, b: 0.9 }, highlight: { r: 0.8, g: 0.9, b: 1.0 }, background: { r: 0.1, g: 0.15, b: 0.2 } },
   { name: "Midnight", base: { r: 0.2, g: 0.2, b: 0.4 }, highlight: { r: 0.4, g: 0.4, b: 0.8 }, background: { r: 0.05, g: 0.05, b: 0.1 } },
-  
+
   // Warm themes
   { name: "Candlelight", base: { r: 0.9, g: 0.7, b: 0.3 }, highlight: { r: 1.0, g: 0.9, b: 0.5 }, background: { r: 0.2, g: 0.15, b: 0.05 } },
   { name: "Amber Glow", base: { r: 0.8, g: 0.5, b: 0.2 }, highlight: { r: 1.0, g: 0.7, b: 0.3 }, background: { r: 0.2, g: 0.1, b: 0.0 } },
@@ -340,16 +340,7 @@ const ColorPickerContent = ({
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <h3 style={{ margin: 0 }}>Color Themes</h3>
-        <button
-          onClick={onClose}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'white',
-            fontSize: '18px',
-            cursor: 'pointer'
-          }}
-        >×</button>
+
       </div>
 
       {/* Current Theme Preview */}
@@ -637,13 +628,62 @@ const ColorPickerContent = ({
 };
 
 const App = () => {
-  // Colors state
+  // Add this CSS class at the top of your file (or in a separate CSS file)
+  const cursorHideStyle = `
+  .cursor-hidden {
+    cursor: none !important;
+  }
+`;
+
+  // Existing state variables
   const [baseColor, setBaseColor] = useState({ r: 0.1, g: 0.1, b: 0.1 });
   const [highlightColor, setHighlightColor] = useState({ r: 0.8, g: 0.8, b: 0.8 });
-  const [backgroundColor, setBackgroundColor] = useState({ r: 0.1, g: 0.1, b: 0.2 });
+  const [backgroundColor, setBackgroundColor] = useState({ r: 1.0, g: 1.0, b: 1.0 });
   const [showColorMenu, setShowColorMenu] = useState(false);
-  
-  // Toggle button for color picker
+  const [isMouseMoving, setIsMouseMoving] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+  const mouseTimerRef = useRef(null);
+
+  // New state to track if cursor should be hidden
+  const [cursorHidden, setCursorHidden] = useState(false);
+
+  // Enhanced mouse movement detection
+  useEffect(() => {
+    const handleMouseMove = () => {
+      // Show cursor whenever mouse moves
+      if (cursorHidden) {
+        setCursorHidden(false);
+      }
+
+      setIsMouseMoving(true);
+
+      // Clear existing timer
+      if (mouseTimerRef.current) {
+        clearTimeout(mouseTimerRef.current);
+      }
+
+      // Set timer to hide button AND cursor after 2 seconds of no movement
+      mouseTimerRef.current = setTimeout(() => {
+        if (!isHovering && !showColorMenu) {
+          setIsMouseMoving(false);
+          setCursorHidden(true); // Hide cursor after timeout
+        }
+      }, 2000);
+    };
+
+    // Add event listener
+    document.addEventListener('mousemove', handleMouseMove);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      if (mouseTimerRef.current) {
+        clearTimeout(mouseTimerRef.current);
+      }
+    };
+  }, [isHovering, showColorMenu, cursorHidden]);
+
+  // Toggle button for color picker with rainbow gradient
   const ColorToggleButton = () => {
     return ReactDOM.createPortal(
       <button
@@ -652,65 +692,93 @@ const App = () => {
           e.stopPropagation();
           setShowColorMenu(!showColorMenu);
         }}
+        onMouseEnter={() => setIsHovering(true)}
+        onMouseLeave={() => setIsHovering(false)}
         style={{
           position: 'fixed',
           top: '20px',
           right: '20px',
-          padding: '8px 12px',
-          backgroundColor: 'rgba(40, 40, 40, 0.8)',
+          width: '40px',
+          height: '40px',
+          padding: 0,
+          background: 'radial-gradient(circle, rgba(255,0,0,0.8) 0%, rgba(255,154,0,0.8) 10%, rgba(208,222,33,0.8) 20%, rgba(79,220,74,0.8) 30%, rgba(63,218,216,0.8) 40%, rgba(47,201,226,0.8) 50%, rgba(28,127,238,0.8) 60%, rgba(95,21,242,0.8) 70%, rgba(186,12,248,0.8) 80%, rgba(251,7,217,0.8) 90%, rgba(255,0,0,0.8) 100%)',
           color: 'white',
           border: 'none',
-          borderRadius: '4px',
+          borderRadius: '50%',
           cursor: 'pointer',
           zIndex: 10000,
-          pointerEvents: 'auto'
+          pointerEvents: 'auto', // Always keep interactive even when transparent
+          boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+
+          // Simplify the opacity logic
+          opacity: isMouseMoving || isHovering || showColorMenu ? 1 : 0,
+
+          // Use a separate transform style with cleaner transitions
+          transform: showColorMenu
+            ? 'rotate(45deg)'
+            : 'rotate(0deg)',
+
+          // Set explicit transition properties
+          transition: 'opacity 400ms ease-in-out, transform 400ms ease-in-out',
+
+          // Center the content
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '24px',
+          fontWeight: 'bold',
+          outline: 'none'
         }}
       >
-        {showColorMenu ? 'Hide Colors' : 'Edit Colors'}
       </button>,
       document.body
     );
   };
 
   return (
-    <div className="app-container">
-      {/* Color Toggle Button */}
-      <ColorToggleButton />
-      
-      {/* Color Picker */}
-      <ColorPickerPortal
-        show={showColorMenu}
-        onClose={() => setShowColorMenu(false)}
-        baseColor={baseColor}
-        highlightColor={highlightColor}
-        backgroundColor={backgroundColor}
-        setBaseColor={setBaseColor}
-        setHighlightColor={setHighlightColor}
-        setBackgroundColor={setBackgroundColor}
-      />
+    <>
+      {/* Add the style tag with our cursor hiding CSS */}
+      <style>{cursorHideStyle}</style>
 
-      {/* Lava Lamp Scene */}
-      <LavaLampScene
-        baseColor={baseColor}
-        highlightColor={highlightColor}
-        backgroundColor={backgroundColor}
-        setBaseColor={setBaseColor}
-        setHighlightColor={setHighlightColor}
-        setBackgroundColor={setBackgroundColor}
-      />
+      <div className={`app-container ${cursorHidden ? 'cursor-hidden' : ''}`}>
+        {/* Color Toggle Button */}
+        <ColorToggleButton />
 
-      {/* <div className="content-overlay">
-        <Header />
-        <Navigation />
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/contact" element={<Contact />} />
-        </Routes>
-        <Footer />
-      </div> */}
-    </div>
+        {/* Color Picker */}
+        <ColorPickerPortal
+          show={showColorMenu}
+          onClose={() => setShowColorMenu(false)}
+          baseColor={baseColor}
+          highlightColor={highlightColor}
+          backgroundColor={backgroundColor}
+          setBaseColor={setBaseColor}
+          setHighlightColor={setHighlightColor}
+          setBackgroundColor={setBackgroundColor}
+        />
+
+        {/* Lava Lamp Scene */}
+        <LavaLampScene
+          baseColor={baseColor}
+          highlightColor={highlightColor}
+          backgroundColor={backgroundColor}
+          setBaseColor={setBaseColor}
+          setHighlightColor={setHighlightColor}
+          setBackgroundColor={setBackgroundColor}
+        />
+
+        {/* <div className="content-overlay">
+          <Header />
+          <Navigation />
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/contact" element={<Contact />} />
+          </Routes>
+          <Footer />
+        </div> */}
+      </div>
+    </>
   );
 };
 
