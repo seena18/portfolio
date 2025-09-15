@@ -9,9 +9,10 @@ import About from './pages/About';
 import Projects from './pages/Projects';
 import Contact from './pages/Contact';
 import LavaLampScene from './components/lavalamp/Scene';
+import MorphingLavaLampWrapper from './components/lavalamp/MorphingLavaLamp';
 import './styles/global.css';
 
-// Define 30 predefined themes with complementary colors
+// Keep your existing colorThemes array
 const colorThemes = [
   // Sunset themes
   { name: "Sunset Glow", base: { r: 0.95, g: 0.5, b: 0.2 }, highlight: { r: 1.0, g: 0.8, b: 0.3 }, background: { r: 0.1, g: 0.05, b: 0.2 } },
@@ -635,46 +636,73 @@ const App = () => {
   }
 `;
 
-  // Existing state variables
+  // ===== State Management =====
+  // Color states
   const [baseColor, setBaseColor] = useState({ r: 0.1, g: 0.1, b: 0.1 });
   const [highlightColor, setHighlightColor] = useState({ r: 0.8, g: 0.8, b: 0.8 });
   const [backgroundColor, setBackgroundColor] = useState({ r: 1.0, g: 1.0, b: 1.0 });
+  
+  // UI states
   const [showColorMenu, setShowColorMenu] = useState(false);
   const [isMouseMoving, setIsMouseMoving] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
+  const [cursorHidden, setCursorHidden] = useState(false);
+  
+  // Mode states - with debug logging
+  const [isMorphMode, setIsMorphMode] = useState(false);
+  const [showNavigation, setShowNavigation] = useState(false);
+  
   const mouseTimerRef = useRef(null);
 
-  // New state to track if cursor should be hidden
-  const [cursorHidden, setCursorHidden] = useState(false);
+  // Debug: Log state changes
+  useEffect(() => {
+    console.log('Mode changed:', { isMorphMode, showNavigation });
+  }, [isMorphMode, showNavigation]);
 
-  // Enhanced mouse movement detection
+  // ===== Portfolio Data =====
+  const portfolioData = {
+    projects: [
+      {
+        id: 'project-1',
+        title: '3D Portfolio',
+        description: 'Interactive 3D web experience',
+        tech: ['Three.js', 'React', 'WebGL'],
+        link: '/projects/3d-portfolio'
+      },
+    ],
+    skills: [
+      { name: 'React', level: 90 },
+      { name: 'Three.js', level: 85 },
+      { name: 'Node.js', level: 80 },
+    ],
+    about: {
+      title: 'Full-Stack Developer',
+      bio: 'Passionate about creating immersive web experiences',
+    }
+  };
+
+  // ===== Effects =====
   useEffect(() => {
     const handleMouseMove = () => {
-      // Show cursor whenever mouse moves
       if (cursorHidden) {
         setCursorHidden(false);
       }
-
       setIsMouseMoving(true);
 
-      // Clear existing timer
       if (mouseTimerRef.current) {
         clearTimeout(mouseTimerRef.current);
       }
 
-      // Set timer to hide button AND cursor after 2 seconds of no movement
       mouseTimerRef.current = setTimeout(() => {
         if (!isHovering && !showColorMenu) {
           setIsMouseMoving(false);
-          setCursorHidden(true); // Hide cursor after timeout
+          setCursorHidden(true);
         }
       }, 2000);
     };
 
-    // Add event listener
     document.addEventListener('mousemove', handleMouseMove);
-
-    // Cleanup
+    
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       if (mouseTimerRef.current) {
@@ -683,7 +711,22 @@ const App = () => {
     };
   }, [isHovering, showColorMenu, cursorHidden]);
 
-  // Toggle button for color picker with rainbow gradient
+  // Handler functions
+  const handleModeToggle = () => {
+    console.log('Toggling mode from:', isMorphMode, 'to:', !isMorphMode);
+    setIsMorphMode(prev => !prev);
+    // Reset navigation when switching modes
+    if (!isMorphMode) {
+      setShowNavigation(false);
+    }
+  };
+
+  const handleNavigationToggle = () => {
+    console.log('Toggling navigation from:', showNavigation, 'to:', !showNavigation);
+    setShowNavigation(prev => !prev);
+  };
+
+  // ===== Components =====
   const ColorToggleButton = () => {
     return ReactDOM.createPortal(
       <button
@@ -707,21 +750,11 @@ const App = () => {
           borderRadius: '50%',
           cursor: 'pointer',
           zIndex: 10000,
-          pointerEvents: 'auto', // Always keep interactive even when transparent
+          pointerEvents: 'auto',
           boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-
-          // Simplify the opacity logic
           opacity: isMouseMoving || isHovering || showColorMenu ? 1 : 0,
-
-          // Use a separate transform style with cleaner transitions
-          transform: showColorMenu
-            ? 'rotate(45deg)'
-            : 'rotate(0deg)',
-
-          // Set explicit transition properties
+          transform: showColorMenu ? 'rotate(45deg)' : 'rotate(0deg)',
           transition: 'opacity 400ms ease-in-out, transform 400ms ease-in-out',
-
-          // Center the content
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -730,19 +763,105 @@ const App = () => {
           outline: 'none'
         }}
       >
+        🎨
       </button>,
       document.body
     );
   };
 
+  const ModeToggleButton = () => {
+    return ReactDOM.createPortal(
+      <button
+        onClick={handleModeToggle}
+        style={{
+          position: 'fixed',
+          top: '20px',
+          left: '20px',
+          padding: '10px 20px',
+          background: 'rgba(0, 0, 0, 0.8)',
+          color: 'white',
+          border: '2px solid rgba(255, 255, 255, 0.3)',
+          borderRadius: '20px',
+          cursor: 'pointer',
+          zIndex: 10000,
+          opacity: isMouseMoving || isHovering ? 1 : 0,
+          transition: 'opacity 400ms ease-in-out',
+          fontWeight: '600',
+          pointerEvents: 'auto'  // Add this to ensure button is clickable
+        }}
+        onMouseEnter={() => setIsHovering(true)}
+        onMouseLeave={() => setIsHovering(false)}
+      >
+        {isMorphMode ? '🌊 Lava Mode' : '🎯 Interactive Mode'}
+      </button>,
+      document.body
+    );
+  };
+
+  const NavigationToggleButton = () => {
+    if (!isMorphMode) return null;
+    
+    return ReactDOM.createPortal(
+      <button
+        onClick={handleNavigationToggle}
+        style={{
+          position: 'fixed',
+          bottom: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          padding: '12px 24px',
+          background: 'rgba(255, 255, 255, 0.9)',
+          color: '#1a1a1a',
+          border: 'none',
+          borderRadius: '25px',
+          cursor: 'pointer',
+          zIndex: 10000,
+          fontWeight: '600',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+          transition: 'all 0.3s ease',
+          pointerEvents: 'auto'  // Add this to ensure button is clickable
+        }}
+        onMouseEnter={() => setIsHovering(true)}
+        onMouseLeave={() => setIsHovering(false)}
+      >
+        {showNavigation ? 'Hide Menu' : 'Show Menu'}
+      </button>,
+      document.body
+    );
+  };
+
+  // ===== Render =====
   return (
     <>
-      {/* Add the style tag with our cursor hiding CSS */}
-      <style>{cursorHideStyle}</style>
+      <style>{`
+        .cursor-hidden {
+          cursor: none !important;
+        }
+        .app-container {
+          position: relative;
+          width: 100%;
+          height: 100vh;
+          overflow: hidden;
+        }
+        .content-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 100;
+        }
+        .content-overlay.interactive {
+          pointer-events: auto;
+        }
+      `}</style>
 
       <div className={`app-container ${cursorHidden ? 'cursor-hidden' : ''}`}>
-        {/* Color Toggle Button */}
+        {/* Control Buttons */}
         <ColorToggleButton />
+        <ModeToggleButton />
+        <NavigationToggleButton />
 
         {/* Color Picker */}
         <ColorPickerPortal
@@ -756,27 +875,40 @@ const App = () => {
           setBackgroundColor={setBackgroundColor}
         />
 
-        {/* Lava Lamp Scene */}
-        <LavaLampScene
-          baseColor={baseColor}
-          highlightColor={highlightColor}
-          backgroundColor={backgroundColor}
-          setBaseColor={setBaseColor}
-          setHighlightColor={setHighlightColor}
-          setBackgroundColor={setBackgroundColor}
-        />
+        {/* Scene Container with key to force re-render */}
+        <div key={`scene-${isMorphMode}`} style={{ width: '100%', height: '100%' }}>
+          {isMorphMode ? (
+            <MorphingLavaLampWrapper
+              highlightColor={highlightColor}
+              backgroundColor={backgroundColor}
+              portfolioData={portfolioData}
+            />
+          ) : (
+            <LavaLampScene
+              baseColor={baseColor}
+              highlightColor={highlightColor}
+              backgroundColor={backgroundColor}
+              setBaseColor={setBaseColor}
+              setHighlightColor={setHighlightColor}
+              setBackgroundColor={setBackgroundColor}
+            />
+          )}
+        </div>
 
-        {/* <div className="content-overlay">
-          <Header />
-          <Navigation />
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/about" element={<About />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/contact" element={<Contact />} />
-          </Routes>
-          <Footer />
-        </div> */}
+        {/* Navigation Overlay (only in morph mode with navigation shown) */}
+        {isMorphMode && showNavigation && (
+          <div className="content-overlay interactive">
+            <Header />
+            <Navigation />
+            <Routes>
+              <Route path="/" element={<Home portfolioData={portfolioData} />} />
+              <Route path="/about" element={<About data={portfolioData.about} />} />
+              <Route path="/projects" element={<Projects data={portfolioData.projects} />} />
+              <Route path="/contact" element={<Contact />} />
+            </Routes>
+            <Footer />
+          </div>
+        )}
       </div>
     </>
   );

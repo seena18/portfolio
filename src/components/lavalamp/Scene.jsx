@@ -1,6 +1,6 @@
 import React, { Suspense, useState, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
-import LavaLampModel from './LavaLampModel';
+import LavaLampModelv2 from './LavaLampModelv2';
 import './Scene.css';
 
 // Main scene component with responsive sizing
@@ -80,7 +80,7 @@ const LavaLampScene = ({ baseColor, highlightColor, backgroundColor }) => {
             <meshStandardMaterial color="#000000" />
           </mesh>
         }>
-          <LavaLampModel
+          <LavaLampModelv2
             baseColor={baseColor}
             highlightColor={highlightColor}
             backgroundColor={backgroundColor}

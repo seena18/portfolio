@@ -25,7 +25,7 @@ const BUFFER_ZONE = 0.2; // Keep the same buffer zone percentage
 
 // Updated constants for smoother substance with occasional blob ejection
 const RESOLUTION = 100; // Reduced from 128 for better performance
-const NUM_METABALLS = 3; // Reduced from 4
+const NUM_METABALLS = 6; // Reduced from 4
 const NUM_SUPPORT_BALLS = 1; // Reduced from 2
 const NUM_FREE_PARTICLES = 0; // Removed free particles entirely
 

@@ -10,10 +10,27 @@
   z-index: 0;
 }
 
+/* Navigation Menu Transition Classes */
+.menu-visible {
+  opacity: 1;
+  transition: opacity 1.2s ease-out;
+}
+
+.menu-fading {
+  opacity: 0;
+  transition: opacity 1.2s ease-out;
+}
+
+.menu-hidden {
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+}
+
 /* Additional responsive styles for different screen sizes */
 @media (max-width: 768px) {
   .lava-lamp-container {
-    /* Any mobile-specific adjustments */
+    /* Any mobile-specific adjustments can be added here if needed */
+    position: fixed;
   }
 
   /* Adjust any UI controls for touch */
