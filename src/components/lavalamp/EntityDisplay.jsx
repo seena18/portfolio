@@ -83,10 +83,14 @@ function ProjectMedia({ item }) {
 }
 
 function ProjectContent({ item, chapter, headingRef }) {
-  return <>
+  const [view, setView] = useState('visual');
+  return <div className="project-content" data-view={view}>
     <div className="project-heading">
       <h1 ref={headingRef} tabIndex={-1}>{item.label}</h1>
       <div className="project-spec"><span>{String(chapter + 1).padStart(2, '0')} / {item.origin}</span><span>{item.kind} · {item.status}</span></div>
+    </div>
+    <div className="project-view-switch" role="group" aria-label="Project view">
+      {['visual', 'story', 'details'].map((option) => <button key={option} type="button" aria-pressed={view === option} onClick={() => setView(option)}>{option}</button>)}
     </div>
     <figure className={`project-visual${item.visualStyle ? ` project-visual--${item.visualStyle}` : ''}`} key={item.video || item.image}>
       <ProjectMedia item={item} />
@@ -109,40 +113,37 @@ function ProjectContent({ item, chapter, headingRef }) {
         <div className="entity-tags">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
       </div>
     </div>
-  </>;
+  </div>;
 }
 
 function SeenaProfile({ data, headingRef, onOpenProject, phase, transfer }) {
+  const [panel, setPanel] = useState('Intro');
+  const panels = ['Intro', ...data.experience.map((role) => role.organization === 'River City Foundry' ? 'Foundry' : role.organization), 'Capabilities', 'Education'];
+  const role = panel === 'Foundry' ? data.experience[0] : panel === 'Chevron Corporation' ? data.experience[1] : null;
   return <div className="seena-profile">
+    <div className="seena-profile__tabs" role="group" aria-label="Seena profile views">
+      {panels.map((name) => <button type="button" key={name} aria-pressed={panel === name} onClick={() => setPanel(name)}>{name === 'Chevron Corporation' ? 'Chevron' : name}</button>)}
+    </div>
     <div className="seena-profile__hero">
       <div className="seena-profile__opening">
         <h1 ref={headingRef} tabIndex={-1}>{data.title}</h1>
-        <p className="seena-profile__intro">{data.intro}</p>
+        <div className="seena-profile__panel" aria-live="polite">
+          {panel === 'Intro' && <p className="seena-profile__intro">{data.intro}</p>}
+          {role && <article className="seena-role">
+            <div className="seena-role__heading"><h2>{role.organization}</h2><span>{role.period}</span></div>
+            <p className="seena-role__title">{role.title}</p>
+            <p className="seena-role__body">{role.body}</p>
+            {role.href && <a className="entity-link seena-role__link" href={role.href} target="_blank" rel="noreferrer">{role.linkLabel}<span aria-hidden="true">↗</span></a>}
+            {role.project && <button type="button" className="entity-link seena-role__link" onClick={onOpenProject}>View document platform project<span aria-hidden="true">↗</span></button>}
+          </article>}
+          {panel === 'Capabilities' && <section className="seena-profile__section"><h2>Capabilities</h2><p>{data.capabilities}</p></section>}
+          {panel === 'Education' && <section className="seena-profile__section"><h2>Education</h2><p>{data.education}</p></section>}
+        </div>
       </div>
       <Suspense fallback={<figure className="seena-portrait" aria-label="Loading portrait" aria-busy="true" />}>
         <SeenaPortrait3D phase={phase} transfer={transfer} />
       </Suspense>
     </div>
-
-    <section className="seena-profile__section" aria-labelledby="seena-experience">
-      <h2 id="seena-experience">Experience</h2>
-      {data.experience.map((role) => <article className="seena-role" key={role.organization}>
-        <div className="seena-role__heading"><h3>{role.organization}</h3><span>{role.period}</span></div>
-        <p className="seena-role__title">{role.title}</p>
-        <p className="seena-role__body">{role.body}</p>
-        {role.href && <a className="entity-link seena-role__link" href={role.href} target="_blank" rel="noreferrer">{role.linkLabel}<span aria-hidden="true">↗</span></a>}
-        {role.project && <button type="button" className="entity-link seena-role__link" onClick={onOpenProject}>View document platform project<span aria-hidden="true">↗</span></button>}
-      </article>)}
-    </section>
-
-    <section className="seena-profile__section" aria-labelledby="seena-capabilities">
-      <h2 id="seena-capabilities">Capabilities</h2>
-      <p>{data.capabilities}</p>
-    </section>
-    <section className="seena-profile__section" aria-labelledby="seena-education">
-      <h2 id="seena-education">Education</h2>
-      <p>{data.education}</p>
-    </section>
   </div>;
 }
 
@@ -355,7 +356,12 @@ export default function EntityDisplay({ section, phase, opacity, onInteract, onO
         {section === 0 && <div className="entity-chapters" aria-label={`${data.label} chapters`}>
           {data.chapters.map((entry, index) => <button key={entry.label} onClick={() => selectChapter(index)} aria-pressed={chapter === index}>{entry.label}</button>)}
         </div>}
-        {section === 0 && <ProjectContent item={item} chapter={chapter} headingRef={headingRef} />}
+        {section === 0 && <div className="entity-chapter-mobile" aria-label="Project navigation">
+          <button type="button" aria-label="Previous project" onClick={() => selectChapter((chapter + data.chapters.length - 1) % data.chapters.length)}>←</button>
+          <span>{String(chapter + 1).padStart(2, '0')} / {String(data.chapters.length).padStart(2, '0')} <strong>{item.label}</strong></span>
+          <button type="button" aria-label="Next project" onClick={() => selectChapter((chapter + 1) % data.chapters.length)}>→</button>
+        </div>}
+        {section === 0 && <ProjectContent key={item.label} item={item} chapter={chapter} headingRef={headingRef} />}
         {section === 1 && <SeenaProfile data={data} headingRef={headingRef} onOpenProject={onOpenProject} phase={phase} transfer={transfer} />}
         {section === 4 && <>
         <h1 ref={headingRef} tabIndex={-1}>{data.title}</h1>

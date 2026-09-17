@@ -33,6 +33,7 @@ const CONTROLS = [
 
 export default function LabPanel({ params, onChange, onPreset, onBack }) {
   const [open, setOpen] = useState(false);
+  const [group, setGroup] = useState('Form');
   const activePreset = PRESETS.find(({ params: values }) =>
     Object.keys(values).every(key => params[key] === values[key]))?.name;
 
@@ -67,10 +68,14 @@ export default function LabPanel({ params, onChange, onPreset, onBack }) {
             ))}
           </div>
 
-          {CONTROLS.map(group => (
-            <section className="lab-ui__group" key={group.group} aria-label={`${group.group} controls`}>
-              <h2>{group.group}</h2>
-              {group.items.map(control => (
+          <div className="lab-ui__group-tabs" role="group" aria-label="Control group">
+            {CONTROLS.map(({ group: name }) => <button type="button" key={name} aria-pressed={group === name} onClick={() => setGroup(name)}>{name}</button>)}
+          </div>
+
+          {CONTROLS.filter(({ group: name }) => name === group).map(controlGroup => (
+            <section className="lab-ui__group" key={controlGroup.group} aria-label={`${controlGroup.group} controls`}>
+              <h2>{controlGroup.group}</h2>
+              {controlGroup.items.map(control => (
                 <div className="lab-ui__control" key={control.key}>
                   <div className="lab-ui__control-heading">
                     <label htmlFor={`lab-${control.key}`}>{control.label}</label>

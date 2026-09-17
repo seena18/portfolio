@@ -176,3 +176,28 @@
 @media (max-height: 560px) and (min-width: 901px) {
   .lab-ui__dock { top: 70px; transform: none; max-height: calc(100dvh - 90px); }
 }
+
+/* The lab swaps control groups instead of scrolling its dock. */
+.lab-ui__dock { overflow: hidden; }
+.lab-ui__intro p { line-height: 1.4; }
+.lab-ui__presets { margin: 17px 0 14px; }
+.lab-ui__group-tabs { display: flex; gap: 16px; border-bottom: 1px solid #d9d9d9; }
+.lab-ui__group-tabs button { min-height: 38px; border: 0; border-bottom: 1px solid transparent; background: none; color: #888; font-size: 12px; }
+.lab-ui__group-tabs button[aria-pressed="true"] { color: #222; border-bottom-color: #222; }
+.lab-ui__group { border: 0; margin-top: 12px; padding-top: 0; }
+.lab-ui__group h2 { margin-bottom: 10px; }
+.lab-ui__control { margin-bottom: 8px; }
+.lab-ui__footer { padding-top: 10px; }
+@media (max-width: 900px) {
+  .lab-ui__dock { max-height: min(62dvh, 480px); }
+  .lab-ui__contents { max-height: none; overflow: hidden; padding-top: 0; padding-bottom: 8px; }
+  .lab-ui__intro h1 { margin: 7px 0 3px; font-size: 23px; }
+  .lab-ui__intro p { font-size: 11px; }
+  .lab-ui__presets { margin: 9px 0; }
+  .lab-ui__presets button { min-height: 32px; }
+  .lab-ui__control { margin-bottom: 3px; }
+  .lab-ui__control input[type="range"] { height: 23px; }
+  .lab-ui__group { margin-top: 6px; }
+  .lab-ui__group h2 { display: none; }
+  .lab-ui__footer { padding-top: 5px; }
+}
