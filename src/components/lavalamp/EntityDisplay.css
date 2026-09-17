@@ -800,6 +800,21 @@
   .seena-profile__facts { margin-top: 8px; padding-top: 8px; }
 }
 
+@media (min-width: 651px) and (max-width: 950px) and (orientation: portrait) {
+  .entity-experience--about .entity-story { width: min(700px, calc(100vw - 64px)); }
+  .seena-profile { display: flex; justify-content: center; }
+  .seena-profile__hero { flex: none; grid-template-columns: minmax(0, 1fr) clamp(160px, 24vw, 200px); column-gap: 24px; }
+  .seena-profile__body { margin-top: 24px; }
+  .seena-profile__roles { display: block; border-top: 0; }
+  .seena-profile__roles .seena-role { border-top: 1px solid #d7d7d3; padding: 20px 0 25px; }
+  .seena-profile__roles .seena-role__heading h2 { font-size: 25px; }
+  .seena-profile__roles .seena-role__body { max-width: 62ch; font-size: 16px; line-height: 1.55; }
+  .seena-profile__roles .seena-role__link { width: 100%; max-width: none; }
+  .seena-profile__facts { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, .7fr); gap: 24px; margin-top: 8px; border-top: 1px solid #d7d7d3; }
+  .seena-profile__facts .seena-profile__section { border: 0; padding: 16px 0 0; }
+  .seena-profile__facts .seena-profile__section > p { font-size: 14px; line-height: 1.5; }
+}
+
 @media (max-width: 650px) {
   .entity-experience--about .entity-story { width: calc(100% - 32px); }
   .seena-profile__hero { grid-template-columns: minmax(0, 1fr) 50%; gap: 0 8px; }
