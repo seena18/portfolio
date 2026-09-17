@@ -150,36 +150,24 @@ function SeenaRole({ role, onOpenProject }) {
 }
 
 function SeenaProfile({ data, headingRef, onOpenProject, phase, transfer }) {
-  const [panel, setPanel] = useState('Intro');
-  const panels = ['Intro', ...data.experience.map((role) => role.organization === 'River City Foundry' ? 'Foundry' : role.organization), 'Capabilities', 'Education'];
-  const role = panel === 'Foundry' ? data.experience[0] : panel === 'Chevron Corporation' ? data.experience[1] : null;
   return <div className="seena-profile">
-    <div className="seena-profile__tabs" role="group" aria-label="Seena profile views">
-      {panels.map((name) => <button type="button" key={name} aria-pressed={panel === name} onClick={() => setPanel(name)}>{name === 'Chevron Corporation' ? 'Chevron' : name}</button>)}
-    </div>
     <div className="seena-profile__hero">
       <div className="seena-profile__opening">
         <h1 ref={headingRef} tabIndex={-1}>{data.title}</h1>
-        <div className="seena-profile__panel" aria-live="polite">
-          {panel === 'Intro' && <p className="seena-profile__intro">{data.intro}</p>}
-          {role && <SeenaRole role={role} onOpenProject={onOpenProject} />}
-          {panel === 'Capabilities' && <section className="seena-profile__section"><h2>Capabilities</h2><p>{data.capabilities}</p></section>}
-          {panel === 'Education' && <section className="seena-profile__section"><h2>Education</h2><p>{data.education}</p></section>}
-        </div>
-        <div className="seena-profile__desktop">
-          <p className="seena-profile__intro">{data.intro}</p>
-          <div className="seena-profile__roles">
-            {data.experience.map((experience) => <SeenaRole key={experience.organization} role={experience} onOpenProject={onOpenProject} />)}
-          </div>
-          <div className="seena-profile__facts">
-            <section className="seena-profile__section"><h2>Capabilities</h2><p>{data.capabilities}</p></section>
-            <section className="seena-profile__section"><h2>Education</h2><p>{data.education}</p></section>
-          </div>
-        </div>
+        <p className="seena-profile__intro">{data.intro}</p>
       </div>
       <Suspense fallback={<figure className="seena-portrait" aria-label="Loading portrait" aria-busy="true" />}>
         <SeenaPortrait3D phase={phase} transfer={transfer} />
       </Suspense>
+      <div className="seena-profile__body">
+        <div className="seena-profile__roles">
+          {data.experience.map((experience) => <SeenaRole key={experience.organization} role={experience} onOpenProject={onOpenProject} />)}
+        </div>
+        <div className="seena-profile__facts">
+          <section className="seena-profile__section"><h2>Capabilities</h2><p>{data.capabilities}</p></section>
+          <section className="seena-profile__section"><h2>Education</h2><p>{data.education}</p></section>
+        </div>
+      </div>
     </div>
   </div>;
 }
