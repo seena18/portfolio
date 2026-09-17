@@ -71,10 +71,7 @@ export function createScreenSpaceOutline(renderer) {
       }
       float filteredLuma(vec2 uv) {
         // Filter texture noise at every zoom, before finding facial edges.
-        // A small on-screen bust needs a wider low-pass footprint; otherwise
-        // several texture marks collapse into the same dark pixel cluster.
-        float smallPortrait = 1.0 - smoothstep(150.0, 440.0, projectedHeight);
-        vec2 r = texel * pixelRatio * mix(1.15, 2.5, smallPortrait);
+        vec2 r = texel * pixelRatio * 1.15;
         float sum = edgeLuma(texture2D(tAlbedo, uv).rgb) * 4.0;
         sum += edgeLuma(texture2D(tAlbedo, uv + vec2(r.x, 0.0)).rgb);
         sum += edgeLuma(texture2D(tAlbedo, uv - vec2(r.x, 0.0)).rgb);
@@ -90,16 +87,9 @@ export function createScreenSpaceOutline(renderer) {
         vec3 nCenter = surfaceNormal(uvScreen);
         float normalCut = normalThreshold;
         float tonalCut = tonalThreshold;
-        float depthCut = depthThreshold;
-        float smallPortrait = stableDensity > 0.5
-          ? 1.0 - smoothstep(150.0, 440.0, projectedHeight)
-          : 0.0;
         if (stableDensity > 0.5) {
-          // Keep the outer silhouette at every size, but progressively omit
-          // sub-pixel folds, pores, and texture edges as the bust recedes.
-          normalCut *= mix(1.0, 4.5, smallPortrait);
-          tonalCut *= mix(1.0, 3.8, smallPortrait);
-          depthCut *= mix(1.0, 2.2, smallPortrait);
+          normalCut *= mix(2.0, 1.0, smoothstep(280.0, 700.0, projectedHeight));
+          tonalCut *= mix(2.3, 1.0, smoothstep(420.0, 780.0, projectedHeight));
         }
         float edge = 0.0;
         for (int x = -1; x <= 1; x++) {
@@ -115,7 +105,7 @@ export function createScreenSpaceOutline(renderer) {
             } else if (subject && other) {
               float farDepth = linearDepth(otherRaw);
               float relativeGap = abs(center - farDepth) / max(min(center, farDepth), 0.001);
-              float depthEdge = smoothstep(depthCut * 0.5, depthCut * 1.5, relativeGap);
+              float depthEdge = smoothstep(depthThreshold * 0.5, depthThreshold * 1.5, relativeGap);
               // Facial detail has its own fixed footprint; thicker silhouettes
               // must never turn into wider texture/normal comparisons.
               vec2 detailUV = clamp(uvScreen + vec2(float(x), float(y)) * texel * pixelRatio * 0.75,
