@@ -10,3 +10,12 @@ root.render(
         <App />
     </Router>
 );
+
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('layout')) {
+    import('./components/dev/LayoutEditor.jsx').then(({ default: LayoutEditor }) => {
+        const mount = document.createElement('div');
+        mount.id = 'layout-editor-root';
+        document.body.append(mount);
+        createRoot(mount).render(React.createElement(LayoutEditor));
+    });
+}

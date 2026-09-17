@@ -1,0 +1,22 @@
+.layout-editor-grid { position: fixed; inset: 0; z-index: 20000; pointer-events: none; background-image: linear-gradient(to right, #2687ff18 1px, transparent 1px), linear-gradient(to bottom, #2687ff18 1px, transparent 1px); background-size: 8px 8px; }
+.layout-editor-selection { position: fixed; z-index: 20001; border: 2px solid #267af5; background: #267af50d; pointer-events: none; box-sizing: border-box; }
+.layout-editor-selection__label { position: absolute; bottom: 100%; left: -2px; padding: 4px 7px; color: white; background: #267af5; font: 11px/1.2 Inter, Arial, sans-serif; white-space: nowrap; }
+.layout-editor-selection__drag { position: absolute; inset: 0; pointer-events: auto; cursor: move; touch-action: none; }
+.layout-editor-selection__resize { position: absolute; width: 18px; height: 18px; right: -9px; bottom: -9px; border: 2px solid white; background: #267af5; pointer-events: auto; cursor: nwse-resize; touch-action: none; }
+.layout-editor-panel { position: fixed; z-index: 20002; top: 14px; right: 14px; width: 248px; max-width: calc(100vw - 28px); padding: 15px; box-sizing: border-box; color: #eee; background: #17191d; border: 1px solid #424852; box-shadow: 0 12px 40px #0005; border-radius: 12px; font: 12px/1.4 Inter, Arial, sans-serif; }
+.layout-editor-panel header { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; margin-bottom: 12px; }
+.layout-editor-panel header strong { font-size: 14px; }
+.layout-editor-panel header span, .layout-editor-panel small { color: #a8adb7; font-size: 10px; }
+.layout-editor-panel label { display: block; }
+.layout-editor-panel select, .layout-editor-panel input[type=number] { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 7px; color: white; background: #292d34; border: 1px solid #4a515c; border-radius: 5px; font: inherit; }
+.layout-editor-panel__viewport { margin-top: 9px; color: #9dc3ff; text-transform: capitalize; }
+.layout-editor-panel p { margin: 10px 0; color: #bec2ca; }
+.layout-editor-panel__fields { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.layout-editor-panel__fields input { min-width: 0; }
+.layout-editor-panel__check { margin: 12px 0; }
+.layout-editor-panel__check input { vertical-align: middle; }
+.layout-editor-panel__actions { display: flex; gap: 5px; }
+.layout-editor-panel button { flex: 1; padding: 7px 4px; color: white; background: #353a42; border: 1px solid #555d68; border-radius: 5px; font: inherit; cursor: pointer; }
+.layout-editor-panel button:hover { background: #475061; }
+.layout-editor-panel output { display: block; margin: 9px 0; color: #a9d0ff; }
+.layout-editor-panel small { display: block; margin-top: 10px; }
