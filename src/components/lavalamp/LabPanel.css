@@ -189,10 +189,10 @@
 .lab-ui__control { margin-bottom: 8px; }
 .lab-ui__footer { padding-top: 10px; }
 @media (max-width: 900px) {
-  .lab-ui__dock { max-height: min(62dvh, 480px); }
+  .lab-ui__dock { max-height: calc(100dvh - 64px - env(safe-area-inset-top)); }
   .lab-ui__contents { max-height: none; overflow: hidden; padding-top: 0; padding-bottom: 8px; }
   .lab-ui__intro h1 { margin: 7px 0 3px; font-size: 23px; }
-  .lab-ui__intro p { font-size: 11px; }
+  .lab-ui__intro p { display: none; }
   .lab-ui__presets { margin: 9px 0; }
   .lab-ui__presets button { min-height: 32px; }
   .lab-ui__control { margin-bottom: 3px; }
@@ -200,4 +200,15 @@
   .lab-ui__group { margin-top: 6px; }
   .lab-ui__group h2 { display: none; }
   .lab-ui__footer { padding-top: 5px; }
+}
+@media (max-width: 900px) and (max-height: 450px) {
+  .lab-ui__dock { max-height: calc(100dvh - 52px); }
+  .lab-ui__mobile-toggle { min-height: 44px; }
+  .lab-ui__intro { display: none; }
+  .lab-ui__presets { margin: 4px 0; }
+  .lab-ui__presets button { min-height: 28px; }
+  .lab-ui__group-tabs button { min-height: 30px; }
+  .lab-ui__control { margin-bottom: 0; }
+  .lab-ui__control input[type="range"] { height: 19px; margin-top: 0; }
+  .lab-ui__footer { padding-top: 2px; }
 }

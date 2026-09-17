@@ -296,6 +296,18 @@
 .mesh-pipeline__viewer-control:focus-visible { background: #f2f2ea; color: #232723; }
 .mesh-pipeline__viewer-loading { position: absolute; left: 10px; bottom: 10px; padding: 5px 7px; background: rgb(23 26 23 / .8); color: #f2f2ea; font-size: 11px; line-height: 1.2; pointer-events: none; }
 .mesh-pipeline__viewer-hint { position: absolute; right: 10px; bottom: 10px; padding: 5px 7px; background: rgb(23 26 23 / .8); color: #f2f2ea; font-size: 11px; line-height: 1.2; pointer-events: none; }
+.mesh-mobile { display: grid; grid-template-rows: 48px minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; }
+.mesh-mobile__steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid rgb(255 255 255 / .2); }
+.mesh-mobile__steps button { min-width: 0; border: 0; border-bottom: 2px solid transparent; background: #242823; color: #bbc0b8; font-size: clamp(10px, 2.9vw, 14px); font-weight: 550; }
+.mesh-mobile__steps button + button { border-left: 1px solid rgb(255 255 255 / .12); }
+.mesh-mobile__steps button[aria-pressed="true"] { border-bottom-color: #f3f3ed; color: #fff; }
+.mesh-mobile__steps small { display: block; margin-bottom: 2px; color: #9ea49b; font-size: 9px; font-weight: 400; }
+.mesh-mobile__media { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; }
+.entity-experience--projects .mesh-mobile__media > img { width: 100%; height: 100%; object-fit: contain; }
+.mesh-mobile__media .mesh-pipeline__viewer { width: 100%; height: 100%; }
+.mesh-mobile__media .mesh-pipeline__brief { width: 100%; max-width: 35ch; padding: 24px; }
+.mesh-mobile__media .mesh-pipeline__brief blockquote { font-size: clamp(20px, 4vw, 30px); }
+.mesh-mobile__media .mesh-pipeline__brief small { font-size: 12px; }
 .entity-experience--projects .project-visual--diagram { background: #171717; color: #f7f7f4; }
 .project-diagram {
   position: relative;
@@ -600,7 +612,7 @@
   .project-content[data-view="story"] .entity-detail { display: none; }
   .project-content[data-view="details"] .project-summary { display: none; }
   .project-content[data-view="details"] .project-evidence { display: none; }
-  .project-content[data-view="story"] .project-overview { padding-bottom: min(20vh, 120px); }
+  .project-content.has-evidence[data-view="story"] .project-overview { padding-bottom: min(20vh, 120px); }
   .entity-experience--projects .project-summary > h2 { font-size: clamp(25px, 4.2vh, 37px); }
   .entity-experience--projects .entity-intro,
   .entity-experience--projects .entity-detail p { font-size: clamp(13px, 1.8vh, 16px); line-height: 1.55; }

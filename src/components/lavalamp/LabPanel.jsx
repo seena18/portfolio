@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import './LabPanel.css';
 
 const PRESETS = [
@@ -37,7 +38,7 @@ export default function LabPanel({ params, onChange, onPreset, onBack }) {
   const activePreset = PRESETS.find(({ params: values }) =>
     Object.keys(values).every(key => params[key] === values[key]))?.name;
 
-  return (
+  return createPortal(
     <div className="lab-ui">
       <header className="lab-ui__masthead">
         <button type="button" className="lab-ui__back" onClick={onBack}>← Menu</button>
@@ -102,6 +103,6 @@ export default function LabPanel({ params, onChange, onPreset, onBack }) {
           </div>
         </div>
       </aside>
-    </div>
+    </div>, document.body
   );
 }

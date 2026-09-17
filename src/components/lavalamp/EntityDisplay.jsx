@@ -39,16 +39,39 @@ const meshwrightStages = [
   { label: 'Motion', number: '05', image: '/projects/meshwright/corrected-walk.png', alt: 'Dust Saint performing the corrected walk animation', mode: 'motion' },
 ];
 
-function MeshwrightPipeline() {
-  return <ol className="mesh-pipeline" aria-label="Dust Saint pipeline: text to image to 3D to rig to motion">
-    {meshwrightStages.map((stage) => <li className={`mesh-pipeline__stage${stage.prompt ? ' mesh-pipeline__stage--text' : ''}${stage.mode ? ' mesh-pipeline__stage--interactive' : ''}`} key={stage.label}>
-      <div className="mesh-pipeline__stage-heading"><span>{stage.number}</span><strong>{stage.label}</strong></div>
-      {stage.prompt ? <div className="mesh-pipeline__brief">
+function MeshwrightStageMedia({ stage }) {
+  return stage.prompt ? <div className="mesh-pipeline__brief">
         <blockquote>“A lean, wiry, tall adult man… weathered desert drifter, pale ash-beige dust-worn skin…”</blockquote>
         <small>Prompt + posed base-body guide</small>
       </div> : stage.mode ? <Suspense fallback={<img src={stage.image} alt={stage.alt} decoding="async" />}>
         <MeshwrightStage3D mode={stage.mode} fallback={stage.image} alt={stage.alt} />
-      </Suspense> : <img src={stage.image} alt={stage.alt} decoding="async" />}
+      </Suspense> : <img src={stage.image} alt={stage.alt} decoding="async" />;
+}
+
+function MeshwrightPipeline() {
+  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 1100px)').matches);
+  const [active, setActive] = useState(4);
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 1100px)');
+    const update = () => setCompact(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  if (compact) {
+    return <div className="mesh-mobile" aria-label="Dust Saint pipeline: text to image to 3D to rig to motion">
+      <div className="mesh-mobile__steps" role="group" aria-label="Pipeline stages">
+        {meshwrightStages.map((stage, index) => <button type="button" key={stage.label} aria-pressed={active === index} onClick={() => setActive(index)}><small>{stage.number}</small>{stage.label}</button>)}
+      </div>
+      <div className="mesh-mobile__media" key={meshwrightStages[active].label}>
+        <MeshwrightStageMedia stage={meshwrightStages[active]} />
+      </div>
+    </div>;
+  }
+  return <ol className="mesh-pipeline" aria-label="Dust Saint pipeline: text to image to 3D to rig to motion">
+    {meshwrightStages.map((stage) => <li className={`mesh-pipeline__stage${stage.prompt ? ' mesh-pipeline__stage--text' : ''}${stage.mode ? ' mesh-pipeline__stage--interactive' : ''}`} key={stage.label}>
+      <div className="mesh-pipeline__stage-heading"><span>{stage.number}</span><strong>{stage.label}</strong></div>
+      <MeshwrightStageMedia stage={stage} />
     </li>)}
   </ol>;
 }
@@ -84,7 +107,7 @@ function ProjectMedia({ item }) {
 
 function ProjectContent({ item, chapter, headingRef }) {
   const [view, setView] = useState('visual');
-  return <div className="project-content" data-view={view}>
+  return <div className={`project-content${item.proofs ? ' has-evidence' : ''}`} data-view={view}>
     <div className="project-heading">
       <h1 ref={headingRef} tabIndex={-1}>{item.label}</h1>
       <div className="project-spec"><span>{String(chapter + 1).padStart(2, '0')} / {item.origin}</span><span>{item.kind} · {item.status}</span></div>
