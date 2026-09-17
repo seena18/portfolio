@@ -144,9 +144,9 @@ export default function SeenaPortrait3D({ phase, transfer }) {
     observer.observe(figure);
     return () => observer.disconnect();
   }, [compact]);
-  // Render the small bust at one resolution, then let the browser scale it as
-  // the layout changes—like an animated asset, but still live and rotating.
-  const portraitDpr = compact ? Math.min(2, Math.max(0.5, 156 / displayHeight)) : [1, 1.5];
+  // Keep enough real pixels behind the compact portrait for the thin ink lines
+  // to survive downscaling; the previous 156px buffer became visibly blocky.
+  const portraitDpr = compact ? Math.min(4, Math.max(2, 360 / displayHeight)) : [1, 1.5];
   const onReady = useCallback(() => setReady(true), []);
   const onError = useCallback(() => setFailed(true), []);
 
