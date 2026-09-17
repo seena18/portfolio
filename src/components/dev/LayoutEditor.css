@@ -11,6 +11,9 @@
 .layout-editor-panel header { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; margin-bottom: 12px; }
 .layout-editor-panel header strong { font-size: 14px; }
 .layout-editor-panel header span, .layout-editor-panel small { color: #a8adb7; font-size: 10px; }
+.layout-editor-panel header .layout-editor-panel__hide { flex: none; padding: 3px 8px; }
+.layout-editor-panel__subhead { margin: -8px 0 12px; color: #a8adb7; font-size: 10px; }
+.layout-editor-reopen { position: fixed; z-index: 20002; top: 12px; right: 12px; padding: 8px 12px; color: #fff; background: #17191d; border: 1px solid #565f6c; border-radius: 999px; box-shadow: 0 4px 18px #0003; font: 12px Inter, Arial, sans-serif; cursor: pointer; }
 .layout-editor-panel label { display: block; }
 .layout-editor-panel__selection { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; border: 0; }
 .layout-editor-panel__selection legend { margin-bottom: 5px; }

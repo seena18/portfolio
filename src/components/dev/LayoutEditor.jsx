@@ -90,6 +90,7 @@ export default function LayoutEditor() {
   const [breakpoint, setBreakpoint] = useState(currentBreakpoint);
   const [bounds, setBounds] = useState(null);
   const [showGrid, setShowGrid] = useState(true);
+  const [overlayVisible, setOverlayVisible] = useState(true);
   const [reference, setReference] = useState('Window');
   const [guides, setGuides] = useState({ x: null, y: null });
   const [notice, setNotice] = useState('');
@@ -226,8 +227,15 @@ export default function LayoutEditor() {
     setDraft({});
     setNotice('Draft reset.');
   };
+  const hideOverlay = () => {
+    drag.current = null;
+    setGuides({ x: null, y: null });
+    setOverlayVisible(false);
+  };
 
   return <>
+    {!overlayVisible && <button type="button" className="layout-editor-reopen" onClick={() => setOverlayVisible(true)} aria-label="Show layout editor">Show layout</button>}
+    {overlayVisible && <>
     {showGrid && <div className="layout-editor-grid" aria-hidden="true" />}
     {guides.x && <div className="layout-editor-guide layout-editor-guide--vertical" style={{ left: guides.x.pos }} aria-hidden="true"><span>{guides.x.label}</span></div>}
     {guides.y && <div className="layout-editor-guide layout-editor-guide--horizontal" style={{ top: guides.y.pos }} aria-hidden="true"><span>{guides.y.label}</span></div>}
@@ -237,7 +245,8 @@ export default function LayoutEditor() {
       {!grouped && <div className="layout-editor-selection__resize" onPointerDown={event => pointerDown(event, 'resize')} onPointerMove={event => { event.stopPropagation(); pointerMove(event); }} onPointerUp={event => { event.stopPropagation(); drag.current = null; setGuides({ x: null, y: null }); }} aria-label={`Resize ${selected}`} />}
     </div>}
     <aside className="layout-editor-panel" aria-label="Layout editor">
-      <header><strong>Layout mode</strong><span>Local only · 8px snap</span></header>
+      <header><strong>Layout mode</strong><button type="button" className="layout-editor-panel__hide" onClick={hideOverlay}>Hide</button></header>
+      <div className="layout-editor-panel__subhead">Local only · 8px snap</div>
       <fieldset className="layout-editor-panel__selection"><legend>Select elements</legend>{TARGETS.map(target => <label key={target.label}><input type="checkbox" checked={selectedItems.includes(target.label)} disabled={!selectedItems.includes(target.label) && !elementRect(target.selector)} onChange={() => toggleSelected(target.label)} /> {target.label}</label>)}</fieldset>
       <div className="layout-editor-panel__viewport">{breakpoint} · {window.innerWidth} × {window.innerHeight}{!matches && ' · resize window to edit'}</div>
       {bounds ? <p>{grouped ? 'Drag the group to move it; alignment preserves the spacing inside it.' : 'Drag to move. Drag the lower-right handle to resize.'}</p> : <p>Open the page containing the selected elements to edit them.</p>}
@@ -252,5 +261,6 @@ export default function LayoutEditor() {
       {notice && <output>{notice}</output>}
       <small>Changes stay in this browser until reset. Exported CSS is a draft, not a production edit.</small>
     </aside>
+    </>}
   </>;
 }
