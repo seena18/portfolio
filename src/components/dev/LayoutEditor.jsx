@@ -19,6 +19,37 @@ const BREAKPOINTS = [
 const blank = { x: 0, y: 0, width: null, height: null };
 const snap = value => Math.round(value / GRID) * GRID;
 const currentBreakpoint = () => window.innerWidth <= 430 ? 'phone' : window.innerWidth <= 1100 ? 'tablet' : 'desktop';
+const viewportRect = () => ({ left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight, width: window.innerWidth, height: window.innerHeight });
+const axisPoints = (rect, axis) => axis === 'x'
+  ? [{ pos: rect.left, edge: 'left' }, { pos: rect.left + rect.width / 2, edge: 'center' }, { pos: rect.right, edge: 'right' }]
+  : [{ pos: rect.top, edge: 'top' }, { pos: rect.top + rect.height / 2, edge: 'middle' }, { pos: rect.bottom, edge: 'bottom' }];
+const elementRect = selector => {
+  if (!selector) return null;
+  const node = document.querySelector(selector);
+  const rect = node?.getBoundingClientRect();
+  return rect && rect.width > 0 && rect.height > 0 ? rect : null;
+};
+
+function snapToAlignment(rect, delta, axis, selected, resize = false) {
+  const points = resize ? axisPoints(rect, axis).slice(-1) : axisPoints(rect, axis);
+  const references = [{ label: 'Window', rect: viewportRect() }, ...TARGETS
+    .filter(target => target.label !== selected)
+    .map(target => ({ label: target.label, rect: elementRect(target.selector) }))
+    .filter(item => item.rect)];
+  let best = null;
+  for (const reference of references) {
+    const guides = axisPoints(reference.rect, axis);
+    for (let index = 0; index < points.length; index++) {
+      for (let guideIndex = 0; guideIndex < guides.length; guideIndex++) {
+        const distance = guides[guideIndex].pos - (points[index].pos + delta);
+        if (Math.abs(distance) <= 7 && (!best || Math.abs(distance) < Math.abs(best.distance))) {
+          best = { distance, pos: guides[guideIndex].pos, label: `${points[index].edge} → ${reference.label} ${guides[guideIndex].edge}` };
+        }
+      }
+    }
+  }
+  return best ? { delta: delta + best.distance, guide: best } : { delta: snap(delta), guide: null };
+}
 
 function readDraft() {
   try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; }
@@ -47,6 +78,8 @@ export default function LayoutEditor() {
   const [breakpoint, setBreakpoint] = useState(currentBreakpoint);
   const [bounds, setBounds] = useState(null);
   const [showGrid, setShowGrid] = useState(true);
+  const [reference, setReference] = useState('Window');
+  const [guides, setGuides] = useState({ x: null, y: null });
   const [notice, setNotice] = useState('');
   const drag = useRef(null);
   const selectedTarget = TARGETS.find(target => target.label === selected);
@@ -107,9 +140,34 @@ export default function LayoutEditor() {
     if (!drag.current) return;
     const { mode, x, y, value: start, bounds: startBounds } = drag.current;
     const dx = event.clientX - x, dy = event.clientY - y;
-    updateValue(mode === 'move'
-      ? { x: snap(start.x + dx), y: snap(start.y + dy) }
-      : { width: Math.max(32, snap((start.width ?? startBounds.width) + dx)), height: Math.max(32, snap((start.height ?? startBounds.height) + dy)) });
+    if (mode === 'move') {
+      const horizontal = snapToAlignment({ left: startBounds.x, right: startBounds.x + startBounds.width, width: startBounds.width }, dx, 'x', selected);
+      const vertical = snapToAlignment({ top: startBounds.y, bottom: startBounds.y + startBounds.height, height: startBounds.height }, dy, 'y', selected);
+      setGuides({ x: horizontal.guide, y: vertical.guide });
+      updateValue({ x: Math.round(start.x + horizontal.delta), y: Math.round(start.y + vertical.delta) });
+    } else {
+      const horizontal = snapToAlignment({ left: startBounds.x, right: startBounds.x + startBounds.width, width: startBounds.width }, dx, 'x', selected, true);
+      const vertical = snapToAlignment({ top: startBounds.y, bottom: startBounds.y + startBounds.height, height: startBounds.height }, dy, 'y', selected, true);
+      setGuides({ x: horizontal.guide, y: vertical.guide });
+      updateValue({ width: Math.max(32, Math.round((start.width ?? startBounds.width) + horizontal.delta)), height: Math.max(32, Math.round((start.height ?? startBounds.height) + vertical.delta)) });
+    }
+  };
+
+  const align = (axis, edge) => {
+    if (!bounds) return;
+    const target = reference === 'Window' ? viewportRect() : elementRect(TARGETS.find(item => item.label === reference)?.selector);
+    if (!target) { setNotice('Open the reference element first.'); return; }
+    const current = axisPoints({ left: bounds.x, top: bounds.y, right: bounds.x + bounds.width, bottom: bounds.y + bounds.height, width: bounds.width, height: bounds.height }, axis);
+    const destination = axisPoints(target, axis);
+    const index = edge === 'start' ? 0 : edge === 'center' ? 1 : 2;
+    updateValue({ [axis]: Math.round((value[axis] || 0) + destination[index].pos - current[index].pos) });
+    setGuides({ x: axis === 'x' ? { pos: destination[index].pos, label: `${selected} aligned to ${reference}` } : null,
+      y: axis === 'y' ? { pos: destination[index].pos, label: `${selected} aligned to ${reference}` } : null });
+  };
+  const matchSize = axis => {
+    const target = reference === 'Window' ? viewportRect() : elementRect(TARGETS.find(item => item.label === reference)?.selector);
+    if (!target) { setNotice('Open the reference element first.'); return; }
+    updateValue({ [axis]: Math.round(target[axis]) });
   };
 
   const copy = async () => {
@@ -133,17 +191,24 @@ export default function LayoutEditor() {
 
   return <>
     {showGrid && <div className="layout-editor-grid" aria-hidden="true" />}
+    {guides.x && <div className="layout-editor-guide layout-editor-guide--vertical" style={{ left: guides.x.pos }} aria-hidden="true"><span>{guides.x.label}</span></div>}
+    {guides.y && <div className="layout-editor-guide layout-editor-guide--horizontal" style={{ top: guides.y.pos }} aria-hidden="true"><span>{guides.y.label}</span></div>}
     {bounds && matches && <div className="layout-editor-selection" style={{ left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height }}>
       <div className="layout-editor-selection__label">{selected} · {Math.round(bounds.width)} × {Math.round(bounds.height)}</div>
-      <div className="layout-editor-selection__drag" onPointerDown={event => pointerDown(event, 'move')} onPointerMove={pointerMove} onPointerUp={() => { drag.current = null; }} aria-label={`Drag ${selected}`} />
-      <div className="layout-editor-selection__resize" onPointerDown={event => pointerDown(event, 'resize')} onPointerMove={event => { event.stopPropagation(); pointerMove(event); }} onPointerUp={event => { event.stopPropagation(); drag.current = null; }} aria-label={`Resize ${selected}`} />
+      <div className="layout-editor-selection__drag" onPointerDown={event => pointerDown(event, 'move')} onPointerMove={pointerMove} onPointerUp={() => { drag.current = null; setGuides({ x: null, y: null }); }} aria-label={`Drag ${selected}`} />
+      <div className="layout-editor-selection__resize" onPointerDown={event => pointerDown(event, 'resize')} onPointerMove={event => { event.stopPropagation(); pointerMove(event); }} onPointerUp={event => { event.stopPropagation(); drag.current = null; setGuides({ x: null, y: null }); }} aria-label={`Resize ${selected}`} />
     </div>}
     <aside className="layout-editor-panel" aria-label="Layout editor">
       <header><strong>Layout mode</strong><span>Local only · 8px snap</span></header>
-      <label>Element<select value={selected} onChange={event => setSelected(event.target.value)}>{TARGETS.map(target => <option key={target.label}>{target.label}</option>)}</select></label>
+      <label>Element<select value={selected} onChange={event => { setSelected(event.target.value); setReference('Window'); setGuides({ x: null, y: null }); }}>{TARGETS.map(target => <option key={target.label}>{target.label}</option>)}</select></label>
       <div className="layout-editor-panel__viewport">{breakpoint} · {window.innerWidth} × {window.innerHeight}{!matches && ' · resize window to edit'}</div>
       {bounds ? <p>Drag the blue area to move. Drag its lower-right handle to resize.</p> : <p>Open the menu or page containing this element to edit it.</p>}
       <div className="layout-editor-panel__fields">{['x', 'y', 'width', 'height'].map(key => <label key={key}>{key}<input type="number" step={GRID} value={value[key] ?? ''} placeholder="auto" onChange={event => updateValue({ [key]: event.target.value === '' ? null : snap(Number(event.target.value)) })} /></label>)}</div>
+      <label className="layout-editor-panel__reference">Align to<select value={reference} onChange={event => setReference(event.target.value)}><option>Window</option>{TARGETS.filter(target => target.label !== selected).map(target => <option key={target.label}>{target.label}</option>)}</select></label>
+      <div className="layout-editor-panel__align" aria-label="Horizontal alignment"><button onClick={() => align('x', 'start')}>Left</button><button onClick={() => align('x', 'center')}>Center X</button><button onClick={() => align('x', 'end')}>Right</button></div>
+      <div className="layout-editor-panel__align" aria-label="Vertical alignment"><button onClick={() => align('y', 'start')}>Top</button><button onClick={() => align('y', 'center')}>Center Y</button><button onClick={() => align('y', 'end')}>Bottom</button></div>
+      <div className="layout-editor-panel__align" aria-label="Match dimensions"><button onClick={() => matchSize('width')}>Match width</button><button onClick={() => matchSize('height')}>Match height</button></div>
+      {bounds && <div className="layout-editor-panel__measure">Window gaps: L {Math.round(bounds.x)} · R {Math.round(window.innerWidth - bounds.x - bounds.width)} / T {Math.round(bounds.y)} · B {Math.round(window.innerHeight - bounds.y - bounds.height)}<br />{Math.abs(2 * bounds.x + bounds.width - window.innerWidth) <= 2 ? 'Horizontally centered' : 'Horizontal margins differ'} · {Math.abs(2 * bounds.y + bounds.height - window.innerHeight) <= 2 ? 'Vertically centered' : 'Vertical margins differ'}</div>}
       <label className="layout-editor-panel__check"><input type="checkbox" checked={showGrid} onChange={event => setShowGrid(event.target.checked)} /> Show grid</label>
       <div className="layout-editor-panel__actions"><button onClick={copy}>Copy CSS</button><button onClick={exportCss}>Export CSS</button><button onClick={reset}>Reset</button></div>
       {notice && <output>{notice}</output>}

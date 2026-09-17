@@ -3,6 +3,10 @@
 .layout-editor-selection__label { position: absolute; bottom: 100%; left: -2px; padding: 4px 7px; color: white; background: #267af5; font: 11px/1.2 Inter, Arial, sans-serif; white-space: nowrap; }
 .layout-editor-selection__drag { position: absolute; inset: 0; pointer-events: auto; cursor: move; touch-action: none; }
 .layout-editor-selection__resize { position: absolute; width: 18px; height: 18px; right: -9px; bottom: -9px; border: 2px solid white; background: #267af5; pointer-events: auto; cursor: nwse-resize; touch-action: none; }
+.layout-editor-guide { position: fixed; z-index: 20001; pointer-events: none; color: #005ac7; font: 11px/1.2 Inter, Arial, sans-serif; }
+.layout-editor-guide--vertical { top: 0; bottom: 0; border-left: 1px solid #0675ff; }
+.layout-editor-guide--horizontal { left: 0; right: 0; border-top: 1px solid #0675ff; }
+.layout-editor-guide span { position: absolute; top: 5px; left: 4px; width: max-content; max-width: 180px; padding: 2px 5px; background: #fff; border: 1px solid #0675ff; }
 .layout-editor-panel { position: fixed; z-index: 20002; top: 14px; right: 14px; width: 248px; max-width: calc(100vw - 28px); padding: 15px; box-sizing: border-box; color: #eee; background: #17191d; border: 1px solid #424852; box-shadow: 0 12px 40px #0005; border-radius: 12px; font: 12px/1.4 Inter, Arial, sans-serif; }
 .layout-editor-panel header { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; margin-bottom: 12px; }
 .layout-editor-panel header strong { font-size: 14px; }
@@ -13,6 +17,9 @@
 .layout-editor-panel p { margin: 10px 0; color: #bec2ca; }
 .layout-editor-panel__fields { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
 .layout-editor-panel__fields input { min-width: 0; }
+.layout-editor-panel__reference { margin-top: 10px; }
+.layout-editor-panel__align { display: flex; gap: 5px; margin-top: 6px; }
+.layout-editor-panel__measure { margin-top: 10px; padding: 8px; color: #c5dfff; background: #283545; border-radius: 5px; font-size: 11px; line-height: 1.5; }
 .layout-editor-panel__check { margin: 12px 0; }
 .layout-editor-panel__check input { vertical-align: middle; }
 .layout-editor-panel__actions { display: flex; gap: 5px; }
