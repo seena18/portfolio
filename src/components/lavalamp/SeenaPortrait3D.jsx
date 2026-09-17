@@ -132,12 +132,13 @@ export default function SeenaPortrait3D({ phase, transfer }) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const rotating = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const compact = window.matchMedia('(max-width: 1100px)').matches;
   const onReady = useCallback(() => setReady(true), []);
   const onError = useCallback(() => setFailed(true), []);
 
   return <figure className={`seena-portrait${ready ? ' is-ready' : ''}`} aria-label="Rotating outline portrait of Seena Abed" aria-busy={!ready && !failed}>
     {!failed && <Canvas camera={{ position: [0, 0, 2], fov: 37, near: 0.01, far: 20 }}
-      dpr={[1, 1.5]} frameloop={rotating ? 'always' : 'demand'} gl={{ antialias: true, alpha: true }}>
+      dpr={compact ? [2, 2.5] : [1, 1.5]} frameloop={rotating ? 'always' : 'demand'} gl={{ antialias: true, alpha: true }}>
       <ambientLight intensity={1.6} />
       <hemisphereLight args={['#ffffff', '#888888', 1.5]} />
       <directionalLight position={[-2, 3, 4]} intensity={2} />

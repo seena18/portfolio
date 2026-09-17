@@ -91,8 +91,10 @@ export function createScreenSpaceOutline(renderer) {
         float normalCut = normalThreshold;
         float tonalCut = tonalThreshold;
         float depthCut = depthThreshold;
+        float smallPortrait = stableDensity > 0.5
+          ? 1.0 - smoothstep(150.0, 440.0, projectedHeight)
+          : 0.0;
         if (stableDensity > 0.5) {
-          float smallPortrait = 1.0 - smoothstep(150.0, 440.0, projectedHeight);
           // Keep the outer silhouette at every size, but progressively omit
           // sub-pixel folds, pores, and texture edges as the bust recedes.
           normalCut *= mix(1.0, 4.5, smallPortrait);
@@ -100,6 +102,7 @@ export function createScreenSpaceOutline(renderer) {
           depthCut *= mix(1.0, 2.2, smallPortrait);
         }
         float edge = 0.0;
+        float silhouetteEdge = 0.0;
         for (int x = -1; x <= 1; x++) {
           for (int y = -1; y <= 1; y++) {
             if (x == 0 && y == 0) continue;
@@ -110,6 +113,7 @@ export function createScreenSpaceOutline(renderer) {
             bool other = otherRaw < 0.999999;
             if (subject != other) {
               edge = 1.0;
+              silhouetteEdge = 1.0;
             } else if (subject && other) {
               float farDepth = linearDepth(otherRaw);
               float relativeGap = abs(center - farDepth) / max(min(center, farDepth), 0.001);
@@ -136,6 +140,9 @@ export function createScreenSpaceOutline(renderer) {
         float stroke = edge * 0.92;
         if (lineFinish > 1.5) stroke = step(0.8, edge);
         else if (lineFinish > 0.5) stroke = smoothstep(0.45, 0.8, edge);
+        // At thumbnail size, full-black interior strokes merge even after
+        // thresholding. Keep the contour solid and let internal detail recede.
+        stroke *= mix(1.0, 0.48, smallPortrait * (1.0 - silhouetteEdge));
         // The outline is ink suspended over the page, including empty mesh interiors.
         gl_FragColor = outlineOnly > 0.5
           ? vec4(edgeColor, stroke)
