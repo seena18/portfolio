@@ -858,10 +858,7 @@ const App = () => {
       `}</style>
 
       <div className={`app-container ${cursorHidden ? 'cursor-hidden' : ''}`}>
-        {/* Control Buttons */}
-        <ColorToggleButton />
-        <ModeToggleButton />
-        <NavigationToggleButton />
+        {/* Presentation stays intentionally minimal; experiment controls live in Sandbox. */}
 
         {/* Color Picker */}
         <ColorPickerPortal

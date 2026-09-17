@@ -1,20 +1,25 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls, Stats, Html } from '@react-three/drei';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useNavigate } from 'react-router-dom';
 import './Scene.css';
-
-// Keep your addBalls prototype method
-THREE.Object3D.prototype.addBalls = function (arr, subtract) {
-  const fld = this.field;
-  const scl = this.resolution;
-  const inv = 1 / scl;
-  for (let i = 0; i < arr.length; i++) {
-    const [x, y, z, strength] = arr[i];
-    this.addBall(x, y, z, strength, subtract, fld, scl, inv);
-  }
-};
+import './SymbioteOverlay.css';
+import EntityDisplay from './EntityDisplay';
+import LabPanel from './LabPanel';
+import InkEjection from './InkEjection';
+import SuspendedFluid from './SuspendedFluid.jsx';
+import { menuBlobScale, menuLayout } from './blobSizing';
+import { measureMenuReference, keepBlobClearOfMenu } from './menuComposition';
+import { sampleInkTargets, COMPOSE_DURATION } from './inkTargets';
+import { useBlobTimeline, useManagedTimeout } from './useBlobTimeline';
+import { bodyDissolve } from './blobTimeline';
+import { createQualityController, updateQuality } from './qualityController';
+import { createLavaLampMaterial } from './lavaMaterial';
+import { useBlobSlicing } from './useBlobSlicing';
+import { warmPortrait } from './portraitAsset';
+import { menuInkState, menuInkParticle, visibleContentTargets } from './menuInk';
 
 // Add simulation step constant
 const SIM_STEP = 1 / 20; // Reduced to 20Hz from 30Hz
@@ -34,79 +39,51 @@ const NUM_FREE_PARTICLES = 0; // Removed free particles entirely
 const ISOLATION = 100; // Further reduced from 80 to prevent giant central blob formation
 
 // Reduce asymmetry for more cohesive main blob
-const ASYMMETRY_FACTOR = 1; // Reduced from 3
-const INTERNAL_WARP_STRENGTH = 1.5; // Further reduced to promote separation
+const ASYMMETRY_FACTOR = 0.5; // Further reduced from 1 for smoother movement
+const INTERNAL_WARP_STRENGTH = 1.0; // Reduced from 1.5 for less chaotic movement
 
 // Simplify shape for smoother appearance
-const ELONGATION_FACTOR = 0.8; // Reduced for less stretching
+const ELONGATION_FACTOR = 0.6; // Reduced from 0.8 for less stretching
 const SHAPE_COMPLEXITY = 1; // Keep minimal for smoother appearance
-const DISTORTION_AMOUNT = 0.1; // Reduced from 0.15 for smoother surface
+const DISTORTION_AMOUNT = 0.05; // Reduced from 0.1 for smoother surface
 
 // Reduce jiggling for more stable main mass
-const JIGGLE_INTENSITY = 0.6; // Reduced from 1.0
-
-// Add this constant for mouse interaction
-const MOUSE_REPULSION_STRENGTH = 0.3; // Reduced from 4.0 to 0.3
-const MOUSE_TRAIL_LENGTH = 4; // Fewer points in trail
-const MOUSE_TRAIL_DECAY = 0.6; // Faster decay
-const MOUSE_TRAIL_WIDTH = 0.15; // Width of the cutting trail
+const JIGGLE_INTENSITY = 0.1; // Reduced from 0.3 for much less chaotic movement
 
 // First, modify your initialization effect to make a cleaner separation between
 // material creation and simulation state
 
 // Add this function outside the component to keep shader code consistent
-const createLavaLampMaterial = (baseColor, highlightColor) => {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      uBaseColor: { value: new THREE.Vector3(baseColor.r, baseColor.g, baseColor.b) },
-      uHighlightColor: { value: new THREE.Vector3(highlightColor.r, highlightColor.g, highlightColor.b) }
-    },
-    vertexShader: `
-      varying vec3 vNormal;
-      varying vec3 vViewPosition;
-      
-      void main() {
-        vNormal = normalize(normalMatrix * normal);
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        vViewPosition = -mvPosition.xyz;
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: `
-      varying vec3 vNormal;
-      varying vec3 vViewPosition;
-      uniform vec3 uBaseColor;
-      uniform vec3 uHighlightColor;
-      
-      void main() {
-        // Use uniform colors instead of hardcoded values
-        vec3 baseColor = uBaseColor;
-        vec3 highlightColor = uHighlightColor;
-        
-        // Calculate fresnel effect for edge highlighting
-        vec3 viewDir = normalize(vViewPosition);
-        float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.0);
-        
-        // Create gradient based on viewing angle
-        vec3 finalColor = mix(baseColor, highlightColor, fresnel);
-        
-        // Less translucent overall
-        float opacity = 0.95 - fresnel * 0.15;
-        
-        gl_FragColor = vec4(finalColor, opacity);
-      }
-    `,
-    transparent: true,
-    blending: THREE.NormalBlending,
-    depthWrite: true,
-    side: THREE.DoubleSide
-  });
+// Smooth easing function for camera movement
+const easeInOutCubic = (t) => {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 };
+
+// Text Clipping Component - creates text mask texture for shader
 const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioData, viewport = {
   width: window.innerWidth,
   height: window.innerHeight,
   aspectRatio: window.innerWidth / window.innerHeight
 } }) => {
+  const prefersReducedMotion = useMemo(
+    () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+    []
+  );
+  useEffect(() => {
+    const warm = () => { warmPortrait().catch(() => {}); };
+    if (window.requestIdleCallback) {
+      const idle = window.requestIdleCallback(warm, { timeout: 1500 });
+      return () => window.cancelIdleCallback(idle);
+    }
+    const timer = window.setTimeout(warm, 300);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const entityImpulse = useRef(0);
+  const entityChapter = useRef(0);
+  const entityPointer = useRef({ x: 0, y: 0 });
+  const entityTransfer = useRef({ startedAt: -Infinity, origin: { x: 0, y: 0 }, target: { x: 0, y: 0 } });
+  const navigationRef = useRef(null);
+  const previousPhaseRef = useRef('lava');
   // Calculate responsive scaling based on screen size
   const getResponsiveScale = useCallback(() => {
     const baseWidth = 1920; // Reference desktop width
@@ -220,10 +197,6 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
 
   // Add navigation hook
   const navigate = useNavigate();
-  const mouseTrail = useRef([]);
-  const mouseVelocity = useRef(new THREE.Vector2(0, 0));
-  const prevMousePos = useRef(new THREE.Vector2(0, 0));
-  const isDragging = useRef(false);
 
   // FIX: baseColor and highlightColor are already RGB objects, not hex strings
   // Remove the hexToRgb conversion
@@ -258,36 +231,27 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       name: "Projects",
       path: "/projects",
       color: new THREE.Color(0x111111),
-      title: "Featured Projects",
-      description: "Explore my latest work including web apps, 3D experiences, and creative coding.",
-      items: ["React Three Fiber Portfolio", "E‑commerce Platform", "3D Data Visualization"],
+      title: "Selected Projects",
+      description: "Production systems, complete products, and open-source infrastructure.",
+      items: ["Chevron document platform", "Meshwright", "Field-safety product"],
     },
     {
       id: 1,
-      name: "About",
-      path: "/about",
+      name: "Seena",
+      path: "/seena",
       color: new THREE.Color(0x222222),
-      title: "About Me",
-      description: "Full‑stack developer crafting immersive digital experiences and tooling.",
-      items: ["5+ Years Experience", "React/Three.js Specialist", "UI/UX minded"],
-    },
-    {
-      id: 2,
-      name: "Skills",
-      path: "/skills",
-      color: new THREE.Color(0x333333),
-      title: "Technical Skills",
-      description: "Proficient across modern web, 3D graphics, and creative development stacks.",
-      items: ["JavaScript/TypeScript", "React/Next.js", "Three.js/WebGL"],
+      title: "Seena Abed",
+      description: "Professional experience, capabilities, and education.",
+      items: ["Experience", "Capabilities", "Education"],
     },
     {
       id: 3,
-      name: "Sandbox",
+      name: "Lab",
       path: "/sandbox",
       color: new THREE.Color(0x9966ff),
-      title: "Sandbox Mode",
-      description: "Experiment with lava lamp parameters and color themes.",
-      items: ["Lava Lamp Controls", "Color Themes", "Real-time Preview"],
+      title: "Interaction Lab",
+      description: "Experiment directly with the fluid system behind the portfolio.",
+      items: ["Lava controls", "Surface behavior", "Real-time rendering"],
     },
     {
       id: 4,
@@ -306,24 +270,51 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
   const blobStrengths = useRef(Array(NUM_METABALLS).fill(0));
 
   const { camera, gl, scene } = useThree();
+
+  // Enable stencil buffer for text clipping
+  useEffect(() => {
+    gl.stencil = true;
+    gl.autoClear = false;
+    gl.setClearColor(0x000000, 0);
+  }, [gl]);
+
   const [stats, setStats] = useState({ fps: 0 });
 
   // Scroll/morph state
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [morphingProgress, setMorphingProgress] = useState(0); // 0: fluid, 1: card stage
   const [currentSection, setCurrentSection] = useState(0);
   const scrollAccumulator = useRef(0);
   const morphRef = useRef(0);
-  useEffect(() => { morphRef.current = morphingProgress; }, [morphingProgress]);
 
   // Morph phase state machine: 'lava' -> 'toRect' -> 'rect' -> 'toLava'
   const [phase, setPhase] = useState('lava');
+  useEffect(() => {
+    if (phase === 'lava' && previousPhaseRef.current === 'toLava') {
+      navigationRef.current?.querySelector(`[data-section="${currentSection}"]`)?.focus();
+    }
+    previousPhaseRef.current = phase;
+  }, [phase, currentSection]);
   const phaseRef = useRef('lava');
-  const setPhaseBoth = (p) => { phaseRef.current = p; setPhase(p); };
+  const setPhaseBoth = (p) => {
+    if (p === 'toLava') {
+      const reverse = phaseRef.current === 'rect' && currentSection !== 3 && !!entityTransfer.current.story && !prefersReducedMotion;
+      entityTransfer.current.reverse = reverse;
+      entityTransfer.current.startedAt = reverse ? performance.now() : -Infinity;
+      entityTransfer.current.progress = reverse ? 1 : Infinity;
+      if (reverse) entityTransfer.current.ink = sampleInkTargets(entityTransfer.current.story);
+      entityTransfer.current.ejectionBalls = null;
+    }
+    if (p === 'toRect' || p === 'lava') entityTransfer.current.reverse = false;
+    phaseRef.current = p;
+    setPhase(p);
+  };
   const [menuHidden, setMenuHidden] = useState(false); // Track immediate menu hiding
   const [menuClicked, setMenuClicked] = useState(false); // Track when menu item is clicked for transition
-  const [menuFadeProgress, setMenuFadeProgress] = useState(0); // Smooth fade progress for sandbox mode
+  const menuFadeProgress = useRef(0);
+  const menuInkCanvasRef = useRef(null);
+  const menuInkCache = useRef({ phase: null, width: 0, height: 0, points: [], contentInk: undefined, destinations: [] });
   const [sandboxMode, setSandboxMode] = useState(false); // Track sandbox mode for controls visibility
+
   const queuedSectionRef = useRef(null); // stores next section index while transitioning
   const targetSectionRef = useRef(currentSection); // section the rectangle should represent on next toRect
   // Rectangle spawn offset so it appears to grow from a nearby metaball
@@ -334,14 +325,17 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
   const wheelLockedRef = useRef(false);
   const lastWheelActionRef = useRef(0);
   // Performance/quality management
-  const perfRef = useRef({ quality: 1.0 }); // 0.5..1.0
+  const perfRef = useRef(createQualityController(window.innerWidth < 768));
+  const profileRef = useRef({ phase: 'lava', frames: [], mesh: [] });
+  const scheduleTimeout = useManagedTimeout();
   const rectSkipRef = useRef(0); // used to skip heavy updates in stable rect
-
-  // Add these missing mouse interaction states and refs
-  const [mouseActive, setMouseActive] = useState(false);
-  const mousePos = useRef(new THREE.Vector2());
-  const raycaster = useRef(new THREE.Raycaster());
-  const mouse3D = useRef(new THREE.Vector3());
+  // Camera centering progress for non-sandbox mode
+  const cameraCenteringProgressRef = useRef(0);
+  const cameraCenteringEnabledRef = useRef(false);
+  // Camera reverse centering (back to side) for non-sandbox mode
+  const cameraReverseCenteringProgressRef = useRef(0);
+  const cameraReverseCenteringEnabledRef = useRef(false);
+  const reverseStartPositionRef = useRef(null); // Store actual starting position for smooth reverse movement
 
   // Add these arrays to track previous positions for velocity-based stretching
   const [prevDirX] = useState(Array(NUM_METABALLS).fill(0));
@@ -350,6 +344,7 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
 
   // Store our marching cubes instance
   const marchingCubesRef = useRef();
+  const menuReferenceDiameter = useRef(null);
   const baseScale = CONTAINER_RADIUS * 2.2;
 
   // Update the simRef to include random initial time but keep all other settings intact
@@ -399,6 +394,15 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
           highlightColor.r, highlightColor.g, highlightColor.b
         );
 
+        // Update text influence based on rectangle phase
+        const textInfluence = (phaseRef.current === 'rect' || phaseRef.current === 'toRect')
+          ? (phaseRef.current === 'rect' ? 1.0 : Math.max(0, (morphRef.current - 0.7) * 3.33))
+          : 0.0;
+
+        if (marchingCubesRef.current.material.uniforms.uTextInfluence) {
+          marchingCubesRef.current.material.uniforms.uTextInfluence.value = textInfluence;
+        }
+
         // Mark material as needing update
         marchingCubesRef.current.material.needsUpdate = true;
 
@@ -408,7 +412,7 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
           1.0
         );
 
-        console.log("Updated colors via uniforms");
+
       } else {
         console.warn("Material not ready for uniform updates");
       }
@@ -417,10 +421,13 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     }
   }, [baseColor, highlightColor, backgroundColor]);
 
+  useBlobTimeline(phaseRef, morphRef, entityTransfer, prefersReducedMotion, simRef);
+  const applySlices = useBlobSlicing(marchingCubesRef, phaseRef, prefersReducedMotion, simRef);
+
   // Animate menu fade progress for smooth transitions - simplified
   useEffect(() => {
     if (!menuClicked) {
-      setMenuFadeProgress(0);
+      menuFadeProgress.current = 0;
       return;
     }
 
@@ -428,31 +435,106 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     const duration = 400; // Reduced from 600ms
     const startTime = Date.now();
 
+    let animationFrame;
     const animate = () => {
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
 
-      setMenuFadeProgress(progress);
-
+      menuFadeProgress.current = progress;
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        animationFrame = requestAnimationFrame(animate);
       }
     };
 
-    requestAnimationFrame(animate);
+    animationFrame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrame);
   }, [menuClicked]);
+
+  useFrame(() => {
+    const nav = navigationRef.current;
+    const canvas = menuInkCanvasRef.current;
+    if (!nav || !canvas || document.hidden) return;
+    const phaseNow = phaseRef.current;
+    const menuPhase = phaseNow === 'lava' && sandboxMode && currentSection === 3 ? 'rect' : phaseNow;
+    const state = menuInkState(menuPhase, entityTransfer.current.progress, menuClicked,
+      menuFadeProgress.current, prefersReducedMotion);
+    // The moving mask is the reveal; opacity here would dim each glyph twice.
+    nav.style.opacity = state.exposure < .005 ? '0' : '1';
+    nav.style.pointerEvents = state.exposure < .99 || phaseNow !== 'lava' ? 'none' : 'auto';
+    nav.style.visibility = state.exposure < .005 ? 'hidden' : 'visible';
+    nav.style.setProperty('--menu-reveal', `${state.front ?? state.exposure * 118}%`);
+
+    const cache = menuInkCache.current;
+    const width = window.innerWidth, height = window.innerHeight;
+    if (cache.phase !== phaseNow || cache.width !== width || cache.height !== height) {
+      const bounds = nav.getBoundingClientRect();
+      const targets = sampleInkTargets(nav, '#171717');
+      const points = [];
+      for (let i = 0; i < targets.positions.length; i += 3) {
+        points.push({ x: bounds.left + targets.positions[i], y: bounds.top + targets.positions[i + 1],
+          band: targets.positions[i + 1] / Math.max(1, bounds.height), coverage: targets.coverage[i / 3], id: i / 3 });
+      }
+      cache.phase = phaseNow;
+      cache.width = width;
+      cache.height = height;
+      cache.points = points;
+      cache.contentInk = undefined;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, width, height);
+    if (!state.active || !cache.points.length) return;
+    const transfer = entityTransfer.current;
+    const contentInk = targetSectionRef.current === 3 ? null : transfer.ink;
+    if (cache.contentInk !== contentInk || cache.contentVersion !== contentInk?.portraitVersion || cache.contentOffsetX !== transfer.offset?.x || cache.contentOffsetY !== transfer.offset?.y) {
+      cache.contentInk = contentInk;
+      cache.contentVersion = contentInk?.portraitVersion;
+      cache.contentOffsetX = transfer.offset?.x;
+      cache.contentOffsetY = transfer.offset?.y;
+      cache.destinations = visibleContentTargets(contentInk, transfer.offset, width, height);
+    }
+    ctx.fillStyle = '#171717';
+    for (const point of cache.points) {
+      const destination = cache.destinations.length
+        ? cache.destinations[(point.id * 73) % cache.destinations.length]
+        : { x: width * .72, y: height * .45 };
+      const particle = menuInkParticle(transfer.progress, point.band,
+        (destination.y - (transfer.offset?.y || 0)) / Math.max(1, contentInk?.height || height));
+      if (particle.opacity < .003) continue;
+      const arc = particle.arc * Math.sin(point.id * 12.9898) * 22;
+      ctx.globalAlpha = particle.opacity * point.coverage;
+      ctx.beginPath();
+      ctx.arc(point.x + (destination.x - point.x) * particle.ease + arc,
+        point.y + (destination.y - point.y) * particle.ease - arc * .55,
+        1.1 - particle.ease * .35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  });
 
   // In the initialization effect, improve the restoration logic
   useEffect(() => {
+    let cancelled = false;
+    let ownedMesh = null;
+    const ownedSimulation = simRef.current;
     // Only load MarchingCubes when needed
     if (!marchingCubesRef.current) {
       import('three/examples/jsm/objects/MarchingCubes.js').then(module => {
+        if (cancelled) return;
         const { MarchingCubes } = module;
-        console.log("Initializing lava lamp with marching cubes");
+
 
         // Setup camera for side-by-side layout - position lava lamp to the left of center
         const baseCameraDistance = 25;
         const cameraDistance = Math.max(18, Math.min(35, baseCameraDistance * (1 / Math.sqrt(responsiveScale))));
+
+        // Store the original camera distance for consistent reverse movement
+        if (originalCameraDistanceRef.current === null) {
+          originalCameraDistanceRef.current = cameraDistance;
+        }
 
         // Position camera to view lava lamp on the left side of screen
         const isMobile = window.innerWidth < 768;
@@ -462,10 +544,25 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
           // Mobile: center the lava lamp, menu below
           camera.position.set(0, 0, cameraDistance);
           camera.lookAt(0, 0, 0);
+
         } else {
           // Desktop/Tablet: position camera to center the blob+menu "container"
-          camera.position.set(5, 0, cameraDistance);  // Moved slightly toward center
-          camera.lookAt(5, 0, 0);  // Look at offset position
+          // Don't override camera position if we have active camera centering
+
+
+          if (cameraCenteringProgressRef.current === 0 &&
+            (cameraReverseCenteringProgressRef.current === 0 || cameraReverseCenteringProgressRef.current === 1) &&
+            centeringProgressRef.current === 0 && !cameraReverseCenteringEnabledRef.current) {
+            camera.position.set(3, 0, cameraDistance);  // Moved slightly toward center
+            camera.lookAt(3, 0, 0);  // Look at offset position
+
+          } else {
+            // Just update Z position and lookAt without overriding smooth X movement
+            camera.position.z = cameraDistance;
+            // Don't override lookAt either as smooth centering handles it
+            camera.updateProjectionMatrix();
+
+          }
         }
         camera.updateProjectionMatrix();  // Ensure camera updates
 
@@ -485,43 +582,25 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
         // Create material with the custom shaders and color uniforms
         const lavaMaterial = createLavaLampMaterial(baseColor, highlightColor);
 
-        // Create marching cubes instance with responsive resolution and scale
-        const screenArea = window.innerWidth * window.innerHeight;
-        const baseArea = 1920 * 1080; // Reference screen area
-        const resolutionScale = Math.sqrt(screenArea / baseArea);
-
-        // Adjust resolution based on screen size and device capabilities
-        let initialResolution;
-        if (window.innerWidth < 768) {
-          // Mobile devices - improved resolution for better quality
-          initialResolution = Math.max(50, Math.min(80, 60 * resolutionScale));
-        } else if (window.innerWidth < 1200) {
-          // Tablets - higher resolution
-          initialResolution = Math.max(70, Math.min(100, 80 * resolutionScale));
-        } else {
-          // Desktop
-          initialResolution = Math.max(80, Math.min(120, 100 * resolutionScale));
-        }
-
+        // Keep one grid for the whole interaction: rebuilding it mid-flight
+        // hitches, and the cubic cost of a 104+ grid starves animation frames.
+        // Interpolated surfaces/normals retain the liquid silhouette at 72.
+        const initialResolution = window.innerWidth < 768 ? 64 : 72;
         const effect = new MarchingCubes(
-          Math.round(initialResolution),
+          initialResolution,
           lavaMaterial,
           false,
           false,
           100000
         );
 
-        // Add event listener to compute vertex normals only once per geometry update
-        effect.addEventListener('render', () => {
-          effect.geometry.computeVertexNormals();
-        });
+        ownedMesh = effect; // MarchingCubes already supplies interpolated normals.
 
         // Default initial position
         effect.position.set(0, 0, 0);
 
         // Set responsive scale based on screen size
-        const baseContainerSize = CONTAINER_RADIUS * 2.2;
-        const scaledSize = baseContainerSize * responsiveScale;
+        const scaledSize = menuBlobScale(window.innerWidth, window.innerHeight, camera.fov, camera.position.z);
 
         effect.scale.set(scaledSize, scaledSize, scaledSize);
 
@@ -539,8 +618,11 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
         scene.add(effect);
         marchingCubesRef.current = effect;
 
-        // Create lighting
-        createLighting(scene);
+
+        // Make marchingCubesRef accessible globally for text masking
+        window.marchingCubesRef = marchingCubesRef;
+
+        // Lighting is calculated inside lavaMaterial; no scene lights needed.
 
         // Start simulation - properly using simRef.current
         simRef.current.clock.start();
@@ -557,19 +639,20 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
           adjustableParams
         );
 
-        return () => {
-          if (marchingCubesRef.current) {
-            scene.remove(marchingCubesRef.current);
-            if (marchingCubesRef.current.material) {
-              marchingCubesRef.current.material.dispose();
-            }
-            if (marchingCubesRef.current.geometry) {
-              marchingCubesRef.current.geometry.dispose();
-            }
-          }
-        };
       });
     }
+    return () => {
+      cancelled = true;
+      if (ownedMesh) {
+        ownedMesh.removeFromParent();
+        ownedMesh.geometry.dispose();
+        ownedMesh.material.dispose();
+        if (marchingCubesRef.current === ownedMesh) marchingCubesRef.current = null;
+      }
+      ownedSimulation.initialized = false;
+      ownedSimulation.clock.stop();
+      if (window.marchingCubesRef === marchingCubesRef) delete window.marchingCubesRef;
+    };
   }, [camera, gl, scene]);
 
   // Add this before your component definition
@@ -595,7 +678,7 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
   useEffect(() => {
     if (!marchingCubesRef.current || !marchingCubesRef.current.material) return;
 
-    console.log("Updating colors only - no rebuild");
+
 
     // Try to update just the material colors
     const success = updateMaterialColor(
@@ -607,7 +690,7 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     );
 
     if (success) {
-      console.log("Color update successful without rebuilding");
+
       // No rebuild needed
     } else {
       console.warn("Direct color update failed, falling back to rebuild");
@@ -639,81 +722,12 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     }
   }, [baseColor, highlightColor, backgroundColor]);
 
-  // Add a separate effect for recreating the material entirely when base or highlight colors change
-  useEffect(() => {
-    if (!marchingCubesRef.current) return;
-
-    try {
-      const effect = marchingCubesRef.current;
-
-      // Create a completely new material
-      const newMaterial = new THREE.ShaderMaterial({
-        uniforms: {
-          uBaseColor: { value: new THREE.Vector3(baseColor.r, baseColor.g, baseColor.b) },
-          uHighlightColor: { value: new THREE.Vector3(highlightColor.r, highlightColor.g, highlightColor.b) }
-        },
-        vertexShader: `
-          varying vec3 vNormal;
-          varying vec3 vViewPosition;
-          
-          void main() {
-            vNormal = normalize(normalMatrix * normal);
-            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            vViewPosition = -mvPosition.xyz;
-            gl_Position = projectionMatrix * mvPosition;
-          }
-        `,
-        fragmentShader: `
-          varying vec3 vNormal;
-          varying vec3 vViewPosition;
-          uniform vec3 uBaseColor;
-          uniform vec3 uHighlightColor;
-          
-          void main() {
-            // Use uniform colors instead of hardcoded values
-            vec3 baseColor = uBaseColor;
-            vec3 highlightColor = uHighlightColor;
-            
-            // Calculate fresnel effect for edge highlighting
-            vec3 viewDir = normalize(vViewPosition);
-            float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.0);
-            
-            // Create gradient based on viewing angle
-            vec3 finalColor = mix(baseColor, highlightColor, fresnel);
-            
-            // Less translucent overall
-            float opacity = 0.95 - fresnel * 0.15;
-            
-            gl_FragColor = vec4(finalColor, opacity);
-          }
-        `,
-        transparent: true,
-        blending: THREE.NormalBlending,
-        depthWrite: true,
-        side: THREE.DoubleSide
-      });
-
-      // Dispose old material and replace with new
-      marchingCubesRef.current.material.dispose();
-      marchingCubesRef.current.material = newMaterial;
-
-      // Update background color
-      gl.setClearColor(
-        new THREE.Color(backgroundColor.r, backgroundColor.g, backgroundColor.b),
-        1.0
-      );
-
-      return; // Exit early, no need to rebuild
-    } catch (error) {
-      console.error("Error updating material:", error);
-    }
-  }, [baseColor, highlightColor]);
+  // Colour changes update the existing material above, preserving transfer uniforms.
 
   // Update marching cubes scale when responsive scale changes
   useEffect(() => {
     if (marchingCubesRef.current) {
-      const baseContainerSize = CONTAINER_RADIUS * 2.2;
-      const scaledSize = baseContainerSize * responsiveScale;
+      const scaledSize = menuBlobScale(window.innerWidth, window.innerHeight, camera.fov, camera.position.z);
       marchingCubesRef.current.scale.set(scaledSize, scaledSize, scaledSize);
 
       // Update camera distance and position for side-by-side layout
@@ -728,10 +742,26 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
           // Mobile: center the lava lamp
           camera.position.set(0, 0, cameraDistance);
           camera.lookAt(0, 0, 0);
+
         } else {
           // Desktop/Tablet: position camera to center the blob+menu "container"
-          camera.position.set(5, 0, cameraDistance);  // Moved slightly toward center
-          camera.lookAt(5, 0, 0);
+          // Don't override camera position if we have active camera centering
+
+
+          if (cameraCenteringProgressRef.current === 0 &&
+            cameraReverseCenteringProgressRef.current === 0 &&
+            centeringProgressRef.current === 0 &&
+            !cameraReverseCenteringEnabledRef.current &&
+            !cameraCenteringEnabledRef.current) {
+            camera.position.set(3, 0, cameraDistance);  // Moved slightly toward center
+            camera.lookAt(3, 0, 0);
+
+          } else {
+            // Just update Z position without overriding smooth X movement
+            camera.position.z = cameraDistance;
+            camera.updateProjectionMatrix();
+
+          }
         }
         camera.updateProjectionMatrix();
       }
@@ -748,51 +778,26 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     if (!camera) return;
 
     if (sandboxMode && currentSection === 3) {
-      console.log('Sandbox useEffect triggered - starting centering animation delay');
+
       // Delay centering animation to prevent jump - longer delay for smoother transition
-      setTimeout(() => {
-        console.log('Sandbox: About to enable centering animation - centeringProgressRef is:', centeringProgressRef.current);
-        console.log('Sandbox: Current state - sandboxMode:', sandboxMode, 'currentSection:', currentSection);
+      scheduleTimeout(() => {
+
+
         centeringEnabledRef.current = true;
         centeringProgressRef.current = 0.001;
         // Reset starting positions so they get captured fresh
         startingPositionsRef.current = { center: null, satellites: [] };
-        console.log('Sandbox: Starting centering animation after delay - enabled:', centeringEnabledRef.current, 'progress:', centeringProgressRef.current);
+
       }, 500); // Increased delay from 100ms to 500ms for smoother transition
 
     } else if (!sandboxMode) {
       // Reset centering when leaving sandbox
-      console.log('Sandbox: Resetting centering progress');
+
       centeringProgressRef.current = 0;
       centeringEnabledRef.current = false;
       startingPositionsRef.current = { center: null, satellites: [] };
     }
   }, [sandboxMode, currentSection]);
-
-  // Create lighting for the scene
-  const createLighting = (scene) => {
-    // Bright ambient light for white background
-    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-    scene.add(ambient);
-
-    // Directional lights from different angles to create highlights on black metaballs
-    const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    mainLight.position.set(5, 5, 5);
-    scene.add(mainLight);
-
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.7);
-    fillLight.position.set(-5, 0, -5);
-    scene.add(fillLight);
-
-    const topLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    topLight.position.set(0, 10, 0);
-    scene.add(topLight);
-
-    // Add this point light
-    const innerLight = new THREE.PointLight(0x404040, 1.5);
-    innerLight.position.set(0, 0, 0);
-    scene.add(innerLight);
-  };
 
   // Track which satellite blob is currently expanded into rectangle
   const expandedBlobRef = useRef(-1); // -1 means none, 0-N means that satellite index
@@ -806,6 +811,15 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
   // ADD THIS REF - it was missing
   const hasCompletedFirstCycle = useRef(false); // Track if we've completed at least one morph cycle
 
+  // Add ref for the rectangle mesh
+  const rectangleMeshRef = useRef(null);
+
+  // Store initial camera distance for consistent Z-axis movement
+  const initialCameraDistanceRef = useRef(null);
+
+  // Store the original camera distance on first setup to ensure reverse movement returns to exact same position
+  const originalCameraDistanceRef = useRef(null);
+
   // Process metaballs for marching cubes - SMOOTHER CONVERGENCE
   const updateMetaballs = (effect, time, numMetaballs, strength, subtract, morph = 0, params = adjustableParams) => {
     // Reset without conditional checks
@@ -814,16 +828,16 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     // Use eased morph for smoother visual transitions
     const easedMorph = easeInOutCubic(morph);
 
-    // Scale down organic dynamics as we morph
-    const dyn = Math.max(0.3, 1.0 - easedMorph * 0.7);
+    // Scale down organic dynamics as we morph - smoother transition
+    const dyn = Math.max(0.1, 1.0 - easedMorph * 0.95); // Much stronger damping
 
-    // Add new non-spherical warping frequencies
-    const warpFreqX = time * 0.47;
-    const warpFreqY = time * 0.39;
-    const warpFreqZ = time * 0.53;
+    // Add new non-spherical warping frequencies - much slower for minimal chaos
+    const warpFreqX = time * 0.15; // Reduced from 0.35 for very calm movement
+    const warpFreqY = time * 0.12; // Reduced from 0.29
+    const warpFreqZ = time * 0.18; // Reduced from 0.41
 
-    // Asymmetric warping values - reduce as morphing increases
-    const morphDamping = 1.0 - easedMorph * 0.8;
+    // Asymmetric warping values - much stronger damping for very smooth convergence
+    const morphDamping = 1.0 - easedMorph * 0.98; // Near-complete damping during convergence
     const globalWarpX = params.asymmetryFactor * Math.sin(warpFreqX) * morphDamping;
     const globalWarpY = params.asymmetryFactor * Math.sin(warpFreqY) * morphDamping;
     const globalWarpZ = params.asymmetryFactor * Math.sin(warpFreqZ) * morphDamping;
@@ -842,83 +856,75 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     const yElongation = (1.0 + 0.5 * Math.sin(timeY)) * morphDamping + (1 - morphDamping);
     const zElongation = (1.0 + 0.8 * Math.sin(timeZ)) * morphDamping + (1 - morphDamping);
 
-    // Reduce undulation amounts during morph
-    const calm = 1.0 - easedMorph;
-    const xUndulation = 0.25 * calm * Math.sin(time * 0.27) * Math.sin(time * 0.1);
-    const yUndulation = 0.25 * calm * Math.sin(time * 0.31 + 0.5) * Math.sin(time * 0.07);
-    const zUndulation = 0.25 * calm * Math.sin(time * 0.23 + 0.9) * Math.sin(time * 0.13);
+    // Reduce undulation amounts during morph - smoother damping
+    const calm = 1.0 - easedMorph * easedMorph; // Quadratic damping for smoother transition
+    const xUndulation = 0.20 * calm * Math.sin(time * 0.24) * Math.sin(time * 0.09); // Reduced frequency and amplitude
+    const yUndulation = 0.20 * calm * Math.sin(time * 0.28 + 0.5) * Math.sin(time * 0.06);
+    const zUndulation = 0.20 * calm * Math.sin(time * 0.21 + 0.9) * Math.sin(time * 0.11);
 
     // Fixed center values
     const centerX = 0.5;
     const centerY = 0.5;
     const centerZ = 0.5;
 
-    // High-frequency, low-amplitude jiggling offsets - reduce during morph
-    const jIntensity = params.jiggleIntensity * calm;
-    const jiggleX = 0.03 * jIntensity * Math.sin(time * 2.7) * Math.sin(time * 2.2);
-    const jiggleY = 0.03 * jIntensity * Math.sin(time * 3.2) * Math.sin(time * 2.3);
-    const jiggleZ = 0.03 * jIntensity * Math.sin(time * 2.3) * Math.sin(time * 2.1);
+    // High-frequency, low-amplitude jiggling offsets - much stronger damping during morph
+    const jIntensity = params.jiggleIntensity * calm * calm * calm; // Cubic damping for very stable convergence
+    const jiggleX = 0.01 * jIntensity * Math.sin(time * 1.2) * Math.sin(time * 1.0); // Much slower frequencies
+    const jiggleY = 0.01 * jIntensity * Math.sin(time * 1.4) * Math.sin(time * 1.1);
+    const jiggleZ = 0.01 * jIntensity * Math.sin(time * 1.1) * Math.sin(time * 0.9);
 
-    // SMOOTHER CENTER BLOB - lerps to center during morph
-    const centerUndulationX = xUndulation * 0.3;
-    const centerUndulationY = yUndulation * 0.3;
-    const centerUndulationZ = zUndulation * 0.3;
+    // MUCH SMOOTHER CENTER BLOB - minimal undulation during convergence
+    const centerUndulationX = xUndulation * 0.1 * morphDamping; // Reduced from 0.3
+    const centerUndulationY = yUndulation * 0.1 * morphDamping;
+    const centerUndulationZ = zUndulation * 0.1 * morphDamping;
 
-    const dynamicCenterX = centerX + centerUndulationX + jiggleX * 0.5;
-    const dynamicCenterY = centerY + centerUndulationY + jiggleY * 0.5;
-    const dynamicCenterZ = centerZ + centerUndulationZ + jiggleZ * 0.5;
+    const dynamicCenterX = centerX + centerUndulationX + jiggleX * 0.2; // Reduced jiggle impact
+    const dynamicCenterY = centerY + centerUndulationY + jiggleY * 0.2;
+    const dynamicCenterZ = centerZ + centerUndulationZ + jiggleZ * 0.2;
 
-    // Lerp center blob to exact center during morph - delay start to prevent jump
-    const centeringStart = 0.1; // Don't start centering until 10% morph progress
+    // Lerp center blob to exact center during morph - earlier start and smoother easing
+    const centeringStart = 0.05; // Start centering earlier at 5% for smoother transition
     const adjustedMorph = Math.max(0, (easedMorph - centeringStart) / (1 - centeringStart));
-    let finalCenterX = THREE.MathUtils.lerp(dynamicCenterX, 0.5, adjustedMorph);
-    const finalCenterY = THREE.MathUtils.lerp(dynamicCenterY, 0.5, adjustedMorph);
-    const finalCenterZ = THREE.MathUtils.lerp(dynamicCenterZ, 0.5, adjustedMorph);
-
-    // SANDBOX MODE: Camera handles centering, keep blob in original position
-    if (sandboxMode && currentSection === 3 && centeringProgressRef.current > 0) {
-      console.log(`Sandbox: Keeping center blob at original position - camera will center the view instead`);
-    }
+    // Apply additional easing for ultra-smooth convergence
+    const smoothedMorph = easeInOutCubic(adjustedMorph);
+    let finalCenterX = THREE.MathUtils.lerp(dynamicCenterX, 0.5, smoothedMorph);
+    const finalCenterY = THREE.MathUtils.lerp(dynamicCenterY, 0.5, smoothedMorph);
+    const finalCenterZ = THREE.MathUtils.lerp(dynamicCenterZ, 0.5, smoothedMorph);
 
     centerRef.current.set(finalCenterX, finalCenterY, finalCenterZ);
 
-    // Debug: Log the actual center position being applied
-    if (sandboxMode && currentSection === 3) {
-      console.log(`Sandbox: Applied center position - X: ${finalCenterX.toFixed(4)}, Y: ${finalCenterY.toFixed(4)}, Z: ${finalCenterZ.toFixed(4)}`);
-    }
 
-    // Adjust center blob strength during morph
-    const centerStrength = strength * (1.7 + easedMorph * 2.0); // Grows stronger
+    // A small apparent volume transfer and damped recoil make shedding read
+    // as material leaving the body. This is an art-directed approximation.
+    const inkProgress = entityTransfer.current.progress ?? Infinity;
+    const withdrawal = Number.isFinite(inkProgress)
+      ? THREE.MathUtils.smoothstep(inkProgress, .05, .27) * (1 - THREE.MathUtils.smoothstep(inkProgress, .62, 1))
+      : 0;
+    const centerStrength = strength * (1.7 + easedMorph * 2.0) * (1 - withdrawal * .04); // Grows stronger
 
-    // Debug: Log the center blob being added to the effect
-    if (sandboxMode && currentSection === 3) {
-      console.log(`Sandbox: Adding center ball to effect - X: ${finalCenterX.toFixed(4)}, Y: ${finalCenterY.toFixed(4)}, Z: ${finalCenterZ.toFixed(4)}, strength: ${(centerStrength * dyn).toFixed(2)}`);
-    }
 
     effect.addBall(finalCenterX, finalCenterY, finalCenterZ, centerStrength * dyn, subtract);
 
-    // SMOOTHER SUPPORT BLOBS - merge into center during morph
+    // MUCH SMOOTHER SUPPORT BLOBS - merge into center during morph with minimal movement
     const supportCount = NUM_SUPPORT_BALLS;
     for (let i = 0; i < supportCount; i++) {
-      const angle = i * 2.1 + time * 0.1;
+      const angle = i * 2.1 + time * 0.03 * morphDamping; // Much slower rotation, damped during convergence
 
-      // Dynamic positions
+      // Dynamic positions - much reduced jiggle and movement for stability
       const orbitRadius = 0.12;
-      const dynamicX = centerX + Math.cos(angle) * orbitRadius * xElongation + jiggleX * (1 + 0.5 * Math.sin(i * 2.1));
-      const dynamicY = centerY + Math.sin(angle) * orbitRadius * yElongation + jiggleY * (1 + 0.5 * Math.cos(i * 1.7));
-      const dynamicZ = centerZ + Math.sin(angle * 0.7) * orbitRadius * zElongation + jiggleZ * (1 + 0.5 * Math.sin(i * 1.3));
+      const dynamicX = centerX + Math.cos(angle) * orbitRadius * xElongation + jiggleX * (0.5 + 0.1 * Math.sin(i * 2.1)); // Much reduced
+      const dynamicY = centerY + Math.sin(angle) * orbitRadius * yElongation + jiggleY * (0.5 + 0.1 * Math.cos(i * 1.7));
+      const dynamicZ = centerZ + Math.sin(angle * 0.7) * orbitRadius * zElongation + jiggleZ * (0.5 + 0.1 * Math.sin(i * 1.3));
 
-      // SIMPLE LERP TO CENTER - all support blobs merge to center with delayed start
-      const centeringStart = 0.1; // Don't start centering until 10% morph progress
+      // SMOOTHER LERP TO CENTER - earlier start and smoother easing
+      const centeringStart = 0.05; // Start centering earlier at 5% for smoother transition
       const adjustedMorph = Math.max(0, (easedMorph - centeringStart) / (1 - centeringStart));
-      let px = THREE.MathUtils.lerp(dynamicX, 0.5, adjustedMorph);
-      const py = THREE.MathUtils.lerp(dynamicY, 0.5, adjustedMorph);
-      const pz = THREE.MathUtils.lerp(dynamicZ, 0.5, adjustedMorph);
+      // Apply additional easing for ultra-smooth convergence
+      const smoothedMorph = easeInOutCubic(adjustedMorph);
+      let px = THREE.MathUtils.lerp(dynamicX, 0.5, smoothedMorph);
+      const py = THREE.MathUtils.lerp(dynamicY, 0.5, smoothedMorph);
+      const pz = THREE.MathUtils.lerp(dynamicZ, 0.5, smoothedMorph);
 
-      // SANDBOX MODE: Camera handles centering, keep satellites in original position
-      if (sandboxMode && currentSection === 3 && centeringProgressRef.current > 0) {
-        console.log(`Sandbox: Keeping satellite ${i} at original position - camera will center the view instead`);
-      }
 
       // Maintain strength but merge position
       effect.addBall(px, py, pz, strength * 0.8 * dyn, subtract);
@@ -941,8 +947,8 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     for (let i = 0; i < satCount; i++) {
       // Calculate dynamic position (normal lava lamp behavior)
       const ballType = i % 3;
-      // Gradually slow down motion during convergence for smooth transition
-      const motionSpeed = 0.2 * (1 - easeInOutCubic(convergePhase) * 0.9);
+      // Much more gradual motion slowdown during convergence for very smooth transition
+      const motionSpeed = 0.1 * (1 - easeInOutCubic(convergePhase) * 0.98); // Very slow motion during convergence
 
       const thetaAngle = i * 1.05 + time * motionSpeed;
       const phiAngle = i * 0.8 + time * (motionSpeed * 0.75);
@@ -1059,37 +1065,34 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
         const rectCenterZ = rectangleStateRef.current.centerZ;
 
         // Debug logging (only log occasionally to avoid spam)
-        if (rectanglePhase > 0.01 && Math.random() < 0.01) {
-          console.log(`Rectangle formation: phase=${rectanglePhase.toFixed(3)}, dimensions=${boxW.toFixed(3)}x${boxH.toFixed(3)}, center=(${rectCenterX.toFixed(3)}, ${rectCenterY.toFixed(3)}, ${rectCenterZ.toFixed(3)})`);
-        }
 
-        if (rectanglePhase > 0.01 && (boxW > 0.005 || boxH > 0.005)) { // Lower thresholds for earlier rectangle formation
-          // OPTIMIZED: Much simpler rectangle formation - fewer metaballs for better performance
+        if (rectanglePhase > 0.01 && (boxW > 0.001 || boxH > 0.001)) { // Much lower thresholds for very small rectangles
+          // MINIMAL FLAT RECTANGLE: Use only essential metaballs for performance
           const expansionProgress = easeInOutCubic(rectanglePhase);
-          const baseStrength = strength * 1.0 * expansionProgress; // Increased base strength
+          const baseStrength = strength * 0.3 * expansionProgress;
 
-          // PERFORMANCE OPTIMIZATION: Use only essential metaballs (9 total instead of 25+)
-          // Center point - stronger for better rectangle formation
-          effect.addBall(rectCenterX, rectCenterY, rectCenterZ, baseStrength * 1.5, subtract);
+          // Small, controlled dimensions to stay within boundaries
+          const rectWidth = boxW * 2.0;  // Much smaller
+          const rectHeight = boxH * 2.0; // Much smaller
 
-          // Cardinal points (4 metaballs) - start forming rectangle outline earlier
-          const cardinalDistance = expansionProgress * 1.0; // Increased from 0.8
-          effect.addBall(rectCenterX + boxW * cardinalDistance, rectCenterY, rectCenterZ, baseStrength * 1.2, subtract);
-          effect.addBall(rectCenterX - boxW * cardinalDistance, rectCenterY, rectCenterZ, baseStrength * 1.2, subtract);
-          effect.addBall(rectCenterX, rectCenterY + boxH * cardinalDistance, rectCenterZ, baseStrength * 1.2, subtract);
-          effect.addBall(rectCenterX, rectCenterY - boxH * cardinalDistance, rectCenterZ, baseStrength * 1.2, subtract);
+          // Use minimal metaballs - just corners and center points
+          const cornerStrength = baseStrength * 1.2;
+          const edgeStrength = baseStrength * 1.0;
 
-          // Corner points when expanding (4 metaballs) - start corners earlier
-          if (rectanglePhase > 0.5) { // Start corners at 50% instead of 70%
-            const cornerProgress = (rectanglePhase - 0.5) / 0.5; // Adjusted range
-            const cornerStrength = baseStrength * 1.0 * cornerProgress; // Increased corner strength
-            const cornerDistance = expansionProgress * 0.9; // Increased from 0.7
+          // 4 corners
+          effect.addBall(rectCenterX + rectWidth * 0.5, rectCenterY + rectHeight * 0.5, rectCenterZ, cornerStrength, subtract);
+          effect.addBall(rectCenterX - rectWidth * 0.5, rectCenterY + rectHeight * 0.5, rectCenterZ, cornerStrength, subtract);
+          effect.addBall(rectCenterX + rectWidth * 0.5, rectCenterY - rectHeight * 0.5, rectCenterZ, cornerStrength, subtract);
+          effect.addBall(rectCenterX - rectWidth * 0.5, rectCenterY - rectHeight * 0.5, rectCenterZ, cornerStrength, subtract);
 
-            effect.addBall(rectCenterX + boxW * cornerDistance, rectCenterY + boxH * cornerDistance, rectCenterZ, cornerStrength, subtract);
-            effect.addBall(rectCenterX - boxW * cornerDistance, rectCenterY + boxH * cornerDistance, rectCenterZ, cornerStrength, subtract);
-            effect.addBall(rectCenterX + boxW * cornerDistance, rectCenterY - boxH * cornerDistance, rectCenterZ, cornerStrength, subtract);
-            effect.addBall(rectCenterX - boxW * cornerDistance, rectCenterY - boxH * cornerDistance, rectCenterZ, cornerStrength, subtract);
-          }
+          // 4 edge centers
+          effect.addBall(rectCenterX + rectWidth * 0.5, rectCenterY, rectCenterZ, edgeStrength, subtract); // Right
+          effect.addBall(rectCenterX - rectWidth * 0.5, rectCenterY, rectCenterZ, edgeStrength, subtract); // Left
+          effect.addBall(rectCenterX, rectCenterY + rectHeight * 0.5, rectCenterZ, edgeStrength, subtract); // Top
+          effect.addBall(rectCenterX, rectCenterY - rectHeight * 0.5, rectCenterZ, edgeStrength, subtract); // Bottom
+
+          // 1 center (optional, for stability)
+          effect.addBall(rectCenterX, rectCenterY, rectCenterZ, baseStrength * 0.8, subtract);
         }
       } else {
         // During rectangle formation, fade out non-expanded blobs completely
@@ -1144,6 +1147,8 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       }
     }
 
+    // Text clipping will be handled by Three.js clipping planes instead of metaballs
+
     // OPTIMIZED isolation adjustment for better performance
     if (rectanglePhase > 0) {
       // More conservative isolation increase to maintain performance
@@ -1155,6 +1160,8 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       effect.isolation = adjustableParams.isolation;
     }
 
+    // Split the density volume before polygonization, including new cut faces.
+    applySlices(effect);
     // Update the marching cubes mesh
     effect.update();
   };
@@ -1167,24 +1174,38 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
 
   // Add menu-based navigation handler
   const handleMenuSelection = (sectionIndex) => {
-    console.log('handleMenuSelection called with:', sectionIndex);
+
 
     if (wheelLockedRef.current) {
-      console.log('Wheel locked, returning early');
+
       return;
     }
+
+    // Inside the organism, change its content without returning to the menu.
+    if (phaseRef.current === 'rect' && sectionIndex !== 3) {
+      if (sectionIndex !== currentSection) {
+        entityTransfer.current.startedAt = -Infinity;
+        entityTransfer.current.ejectionBalls = null;
+        setCurrentSection(sectionIndex);
+        entityChapter.current = 0;
+        entityImpulse.current = 1;
+      }
+      return;
+    }
+    entityChapter.current = 0;
 
     const now = Date.now();
     if (now - lastWheelActionRef.current < 350) {
-      console.log('Too soon since last action, returning early');
+
       return;
     }
 
-    console.log('Menu selection triggered, starting fade out...');
 
+
+    targetSectionRef.current = sectionIndex;
     // Immediately start the fade transition
     setMenuClicked(true);
-    console.log(`Menu clicked: section ${sectionIndex}, current phase: ${phaseRef.current}, current section: ${currentSection}, sandbox mode: ${sandboxMode}`);
+
 
     // Don't use setTimeout - let the phase transitions control menu visibility
 
@@ -1192,17 +1213,17 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       // Special handling for Sandbox mode (section 3) - no morphing needed
       if (sectionIndex === 3) {
         if (sandboxMode && currentSection === 3) {
-          console.log('Exiting sandbox mode');
+
           // Already in sandbox mode, clicking again should exit
 
           // Delay state changes to prevent jump - same as other menu options
-          setTimeout(() => {
+          scheduleTimeout(() => {
             setSandboxMode(false);
             setCurrentSection(0); // Return to projects
             // Stay in lava phase
 
             // Use same fade timing as other sections
-            setTimeout(() => {
+            scheduleTimeout(() => {
               setMenuClicked(false);
             }, 1200);
           }, 100); // Same delay as other menu options
@@ -1210,20 +1231,31 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
           return;
         }
 
-        console.log('Entering sandbox mode');
+
 
         // Follow EXACT same pattern as other menu options - single delayed state batch
-        setTimeout(() => {
+        scheduleTimeout(() => {
           // Batch ALL state changes together like other menu options
           setCurrentSection(sectionIndex);
           setSandboxMode(true);
           setMenuClicked(false); // Reset menu in same batch
-          console.log('Sandbox mode activated after menu fade');
+
         }, 1200); // Same 1200ms delay as original menu fade timing
 
         return;
       }
 
+      // Keep the exact mesh and camera that the visitor clicked. Its surface
+      // is the transfer source and the return destination; the old rectangle
+      // composition must not move it underneath the departing particles.
+      if (marchingCubesRef.current) {
+        const body = marchingCubesRef.current;
+        body.updateMatrixWorld();
+        entityTransfer.current.pose = {
+          position: body.position.clone(), quaternion: body.quaternion.clone(), scale: body.scale.clone(),
+          cameraPosition: camera.position.clone(), cameraQuaternion: camera.quaternion.clone(),
+        };
+      }
       // Start morphing to rectangle for other sections
       const randomBlob = Math.floor(Math.random() * Math.max(3, adjustableParams.numMetaballs));
       expandedBlobRef.current = randomBlob;
@@ -1232,29 +1264,52 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       centeringProgressRef.current = 0;
       centeringEnabledRef.current = false;
 
+      // Reset reverse centering when starting forward centering
+      cameraReverseCenteringProgressRef.current = 0;
+      cameraReverseCenteringEnabledRef.current = false;
+      reverseStartPositionRef.current = null; // Reset stored starting position
+
+      // Initialize camera centering immediately (no delay) to prevent jumping
+      cameraCenteringEnabledRef.current = true;
+      cameraCenteringProgressRef.current = 0.001; // Start immediately with tiny progress
+
       targetSectionRef.current = sectionIndex;
       setCurrentSection(sectionIndex);
       setSandboxMode(false); // Ensure sandbox mode is off for other sections
-      setMorphingProgress(0.001);
+      morphRef.current = 0.001;
       setScrollProgress(0);
+      // One entry gesture: begin shedding while the gathering morph
+      // is still underway. Content/chapter updates never restart this clock.
+      entityTransfer.current.startedAt = prefersReducedMotion ? -Infinity : performance.now();
+      entityTransfer.current.progress = prefersReducedMotion ? Infinity : -.1;
+      entityTransfer.current.scrollTop = 0;
       setPhaseBoth('toRect');
       wheelLockedRef.current = true;
       lastWheelActionRef.current = now;
 
     } else if (phaseRef.current === 'rect') {
+
       if (sectionIndex === 3) {
         // Sandbox mode clicked from rect phase
-        console.log('Entering sandbox mode from rect phase');
+
         setCurrentSection(sectionIndex);
         setSandboxMode(true);
         setPhaseBoth('toLava'); // Return to lava first
         wheelLockedRef.current = true;
         lastWheelActionRef.current = now;
       } else if (currentSection === sectionIndex) {
-        // Same section clicked - revert to lava
-        // IMMEDIATELY reset sandbox centering to prevent jump
+        // Same section clicked - revert to lava using the proven reverse centering system
+
+        // Reset sandbox centering
         centeringProgressRef.current = 0;
         centeringEnabledRef.current = false;
+
+        // Initialize the proven non-sandbox reverse centering system
+
+        cameraCenteringProgressRef.current = 0;  // FORCE forward centering to 0 immediately
+        cameraCenteringEnabledRef.current = false;
+        cameraReverseCenteringEnabledRef.current = true;
+        cameraReverseCenteringProgressRef.current = 0.001;
 
         setSandboxMode(false);
         setPhaseBoth('toLava');
@@ -1262,9 +1317,17 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
         lastWheelActionRef.current = now;
       } else {
         // Different section clicked - switch to new section
+
         // IMMEDIATELY reset sandbox centering to prevent jump
         centeringProgressRef.current = 0;
         centeringEnabledRef.current = false;
+
+        // Reset forward camera centering and initialize reverse centering
+
+        cameraCenteringProgressRef.current = 0;  // FORCE forward centering to 0 immediately
+        cameraCenteringEnabledRef.current = false;
+        cameraReverseCenteringEnabledRef.current = true;
+        cameraReverseCenteringProgressRef.current = 0.001;
 
         setSandboxMode(false);
         queuedSectionRef.current = sectionIndex;
@@ -1280,6 +1343,40 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     }
   };
 
+  // Handle sandbox back button click
+  const handleSandboxBackClick = () => {
+    // Use the same logic as clicking the same section again to exit sandbox
+
+
+    if (wheelLockedRef.current) {
+
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastWheelActionRef.current < 350) {
+
+      return;
+    }
+
+    // Use the EXISTING non-sandbox reverse centering system that works perfectly
+    // Reset sandbox centering
+    centeringProgressRef.current = 0;
+    centeringEnabledRef.current = false;
+
+    // Initialize the proven non-sandbox reverse centering system
+
+    cameraCenteringProgressRef.current = 0;  // FORCE forward centering to 0 immediately
+    cameraCenteringEnabledRef.current = false;
+    cameraReverseCenteringEnabledRef.current = true;
+    cameraReverseCenteringProgressRef.current = 0.001;
+
+    setSandboxMode(false);
+    setPhaseBoth('toLava');
+    wheelLockedRef.current = true;
+    lastWheelActionRef.current = now;
+  };
+
   // Add a ref to store previous metaball state for interpolation
   const prevMetaballStateRef = useRef({
     positions: [],
@@ -1288,22 +1385,95 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
   });
 
   // Modified useFrame with smoother, less choppy updates
-  useFrame((state, delta) => {
+  useFrame((state, frameDelta) => {
+    const delta = Math.min(frameDelta, .05);
     const sim = simRef.current;
     if (!sim.initialized) return;
 
     // Skip all animation when freezing
-    if (sim.freezeAnimation) return;
+    if (sim.freezeAnimation || document.hidden) return;
 
-    // Update mouse position - keep this outside throttling
-    if (mousePos.current) {
-      raycaster.current.setFromCamera(mousePos.current, camera);
-      const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-      const intersectPoint = new THREE.Vector3();
-      raycaster.current.ray.intersectPlane(plane, intersectPoint);
-      intersectPoint.divideScalar(10);
-      mouse3D.current = intersectPoint;
+    const transferState = entityTransfer.current;
+    const pose = transferState.pose;
+    const transferBody = marchingCubesRef.current;
+    if (pose && phaseRef.current !== 'lava' && transferBody) {
+      const returning = phaseRef.current === 'toLava';
+      const moving = phaseRef.current === 'toRect' || returning;
+      const motionDelta = moving && !prefersReducedMotion ? delta : 0;
+      pose.motionElapsed = (pose.motionElapsed || 0) + motionDelta;
+      sim.visualTime = (sim.visualTime || 0) + motionDelta;
+      transferBody.position.copy(pose.position);
+      transferBody.quaternion.copy(pose.quaternion);
+      transferBody.rotateY(pose.motionElapsed * .12);
+      transferBody.scale.copy(pose.scale);
+      camera.position.copy(pose.cameraPosition);
+      camera.quaternion.copy(pose.cameraQuaternion);
+      camera.updateMatrixWorld();
+      transferBody.updateMatrixWorld();
+      const progress = Number.isFinite(transferState.progress) ? transferState.progress : returning ? -1 : 1;
+      transferBody.visible = progress < .49;
+      const uniforms = transferBody.material.uniforms;
+      if (uniforms.uTransferProgress) uniforms.uTransferProgress.value = progress;
+      if (uniforms.uTransferClock) uniforms.uTransferClock.value = pose.motionElapsed;
+      if (uniforms.uTransferMotion) uniforms.uTransferMotion.value = prefersReducedMotion ? 0
+        : returning ? THREE.MathUtils.smoothstep(progress, 0, .16) : 1;
+      if (uniforms.uTime) uniforms.uTime.value = sim.visualTime;
+      if (uniforms.uDetached) uniforms.uDetached.value = 0;
+      if (phaseRef.current === 'toRect' && morphRef.current >= 1) {
+        setPhaseBoth('rect');
+        setMenuHidden(true);
+        wheelLockedRef.current = false;
+        hasCompletedFirstCycle.current = true;
+      } else if (returning && morphRef.current <= 0) {
+        transferBody.visible = true;
+        if (uniforms.uTransferProgress) uniforms.uTransferProgress.value = -1;
+        if (uniforms.uTransferMotion) uniforms.uTransferMotion.value = 0;
+        cameraCenteringEnabledRef.current = false;
+        cameraCenteringProgressRef.current = 0;
+        cameraReverseCenteringEnabledRef.current = false;
+        cameraReverseCenteringProgressRef.current = 0;
+        transferState.pose = null;
+        setPhaseBoth('lava');
+        setMenuHidden(false);
+        setMenuClicked(false);
+        wheelLockedRef.current = false;
+      }
+      return;
     }
+    if (transferBody) {
+      if (transferBody.material.uniforms.uTransferMotion) transferBody.material.uniforms.uTransferMotion.value = 0;
+      transferBody.visible = phaseRef.current === 'lava' || phaseRef.current === 'toLava';
+      if (transferBody.material.uniforms.uTransferProgress) {
+        transferBody.material.uniforms.uTransferProgress.value = transferBody.visible ? -1 : 1;
+      }
+    }
+
+    sim.visualTime = (sim.visualTime || 0) + (prefersReducedMotion ? 0 : delta);
+
+    // Update time uniform for shader animation
+    if (marchingCubesRef.current?.material?.uniforms?.uTime) {
+      const uniforms = marchingCubesRef.current.material.uniforms;
+      uniforms.uTime.value = sim.visualTime;
+      const extractionProgress = (entityTransfer.current.progress ?? Infinity);
+      const dissolve = bodyDissolve(extractionProgress, phaseRef.current, prefersReducedMotion);
+      if (uniforms.uDissolve) {
+        uniforms.uDissolve.value = dissolve;
+      }
+      const deformationTarget = prefersReducedMotion ? 0
+        : Math.sin(dissolve * Math.PI) * (0.5 + entityImpulse.current * 0.65);
+      uniforms.uDetached.value = THREE.MathUtils.damp(uniforms.uDetached.value, deformationTarget, 9, delta);
+      uniforms.uLiquidActive.value = THREE.MathUtils.damp(uniforms.uLiquidActive.value, 0, 12, delta);
+    }
+    entityImpulse.current = Math.max(0, entityImpulse.current - delta * 1.6);
+
+    if (marchingCubesRef.current?.material?.uniforms?.uInkTransfer) {
+      const transferMorph = easeInOutCubic(morphRef.current);
+      const transferProgress = easeInOutCubic(Math.max(0, (transferMorph - 0.5) / 0.5));
+      marchingCubesRef.current.material.uniforms.uInkTransfer.value = prefersReducedMotion
+        ? 0
+        : Math.pow(Math.max(0, Math.sin(Math.PI * transferProgress)), 0.55);
+    }
+
 
     // Get effect reference
     const effect = marchingCubesRef.current;
@@ -1313,7 +1483,7 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     if (sandboxMode && currentSection === 3 && centeringEnabledRef.current) {
       const centeringSpeed = 0.8; // Much slower start for very gradual animation
       centeringProgressRef.current = Math.min(1, centeringProgressRef.current + delta * centeringSpeed);
-      console.log(`Sandbox: Animation progress - centeringProgressRef: ${centeringProgressRef.current.toFixed(3)}, enabled: ${centeringEnabledRef.current}`);
+
     } else if (!sandboxMode || currentSection !== 3) {
       // Reset centering when not in sandbox mode
       if (centeringProgressRef.current > 0) {
@@ -1322,16 +1492,71 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       }
     }
 
+    // NON-SANDBOX MODE: Animate camera centering progress (similar to sandbox mode)
+    // NOW TIED TO CONVERGENCE: Use morphingProgress to drive camera centering during convergence
+    if (!sandboxMode && cameraCenteringEnabledRef.current && phaseRef.current === 'toRect') {
+      // Use morphingProgress directly to sync with convergence animation
+      const convergenceProgress = Math.min(1, morphRef.current * 1.8); // Even faster convergence tracking for new 2.5s duration
+      const centeringSpeed = 4.0; // Faster centering speed to match reduced transition time
+
+      // Lerp towards convergence progress for smooth following
+      const targetProgress = convergenceProgress;
+      cameraCenteringProgressRef.current = THREE.MathUtils.lerp(
+        cameraCenteringProgressRef.current,
+        targetProgress,
+        delta * centeringSpeed
+      );
+
+
+    } else if (sandboxMode || phaseRef.current === 'lava' || phaseRef.current === 'toLava') {
+      // Reset camera centering when not morphing, in sandbox mode, OR during toLava phase
+      cameraCenteringProgressRef.current = 0;
+      cameraCenteringEnabledRef.current = false;
+    }
+
+    // NON-SANDBOX MODE: Animate reverse camera centering (back to side position)
+    if (cameraReverseCenteringEnabledRef.current && phaseRef.current === 'toLava') {
+      const centeringSpeed = entityTransfer.current.reverse ? 1000 / COMPOSE_DURATION : .67;
+      cameraReverseCenteringProgressRef.current = Math.min(1, cameraReverseCenteringProgressRef.current + delta * centeringSpeed);
+
+      // Enhanced debug logging
+
+
+      // Stop reverse centering when it reaches 100% - but don't reset immediately
+      if (cameraReverseCenteringProgressRef.current >= 1) {
+
+        cameraReverseCenteringProgressRef.current = 1; // Keep at 1, don't reset to 0
+        cameraReverseCenteringEnabledRef.current = false; // But disable the animation
+        reverseStartPositionRef.current = null; // Reset stored starting position when complete
+
+        // Ensure final position is exactly at side position
+        if (camera && window.innerWidth >= 768) {
+
+          camera.position.x = 5;
+          camera.lookAt(5, 0, 0);
+          camera.updateProjectionMatrix();
+        }
+      }
+    } else if (phaseRef.current !== 'toLava' && phaseRef.current !== 'lava') {
+      // Only reset reverse centering when starting a new transition cycle (not when just entering 'lava' phase)
+      if (cameraReverseCenteringProgressRef.current !== 0 || cameraReverseCenteringEnabledRef.current) {
+
+        cameraReverseCenteringProgressRef.current = 0;
+        cameraReverseCenteringEnabledRef.current = false;
+        reverseStartPositionRef.current = null; // Reset stored starting position
+      }
+    }
+
     // Current time for animation
-    const currentTime = sim.clock.getElapsedTime();
+    const currentTime = sim.visualTime;
 
     // Update sim.time smoothly
-    sim.time += delta * sim.speed;
+    sim.time += delta * sim.speed * (prefersReducedMotion ? 0 : 1);
 
     // Apply eased morph value and calculate rectangle phase once
     const easedMorph = easeInOutCubic(morphRef.current);
-    // Calculate rectangle phase (when blobs should expand into rectangle)
-    const rectanglePhase = Math.max(0, (easedMorph - 0.5) * 2.0); // Start rectangle at 50% morph instead of 65%
+    // Calculate rectangle phase (when blobs should expand into rectangle) - match metaball calculation
+    const rectanglePhase = Math.max(0, (easedMorph - 0.6) * 2.5); // 0.6-1.0 of morph, starts after convergence
 
     // SMOOTHER RECTANGLE INTERPOLATION - update every frame during morph
     if (easedMorph > 0) { // Changed from 0.001 to 0
@@ -1349,18 +1574,25 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       // Smooth transition to center during expansion - start later to avoid initial jump
       const centeringProgress = easeInOutCubic(Math.max(0, (easedMorph - 0.3) / 0.7)); // Start centering at 30% progress instead of 20%
 
-      targetRectangleStateRef.current.centerX = THREE.MathUtils.lerp(sideCenterX, finalCenterX, centeringProgress);
-      targetRectangleStateRef.current.centerY = 0.5;  // Always centered vertically
+      // Fixed center position for stability - prevent movement/clipping
+      targetRectangleStateRef.current.centerX = 0.5;  // Always centered horizontally
+      targetRectangleStateRef.current.centerY = 0.5;
       targetRectangleStateRef.current.centerZ = 0.5;  // Always centered in depth
 
-      // Rectangle dimensions expand more smoothly - card-like proportions
-      targetRectangleStateRef.current.width = 0.25 * expandT;  // Increased from 0.15 for better visibility
-      targetRectangleStateRef.current.height = 0.35 * expandT; // Increased from 0.20 for better visibility
-      targetRectangleStateRef.current.depth = 0.05 * expandT;  // Increased from 0.02 for better visibility
+      // The selected organism is a visual anchor rather than a text box. It
+      // settles into a compact portal while the editorial content gets its own
+      // readable plane in the HTML overlay.
+      const breath = prefersReducedMotion ? 0 : Math.sin(currentTime * 1.2) * 0.004;
+      const pressure = prefersReducedMotion ? 0 : Math.sin(entityImpulse.current * Math.PI) * 0.025;
+      const chapterShape = entityChapter.current === 1 ? 0.012 : entityChapter.current === 2 ? -0.009 : 0;
+      const sectionShape = currentSection === 1 ? [0.045, 0.095] : currentSection === 2 ? [0.1, 0.038] : currentSection === 4 ? [0.042, 0.042] : [0.078, 0.062];
+      targetRectangleStateRef.current.width = (sectionShape[0] + breath + pressure + chapterShape) * expandT;
+      targetRectangleStateRef.current.height = (sectionShape[1] - breath - pressure * 0.5 - chapterShape * 0.5) * expandT;
+      targetRectangleStateRef.current.depth = (isMobileView ? 0.012 : 0.01) * expandT;
 
       // Debug logging for expansion calculation
       if (Math.random() < 0.01) { // Log occasionally to avoid spam
-        console.log(`Expansion: easedMorph=${easedMorph.toFixed(3)}, expandT=${expandT.toFixed(3)}, targetWidth=${(0.25 * expandT).toFixed(3)}, targetHeight=${(0.35 * expandT).toFixed(3)}`);
+
       }
 
       // Smooth interpolation to targets with faster speed for rectangle dimensions
@@ -1377,20 +1609,97 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       rectangleStateRef.current.centerX = THREE.MathUtils.clamp(rectangleStateRef.current.centerX, margin, 1 - margin);
       rectangleStateRef.current.centerY = THREE.MathUtils.clamp(rectangleStateRef.current.centerY, margin, 1 - margin);
       rectangleStateRef.current.centerZ = THREE.MathUtils.clamp(rectangleStateRef.current.centerZ, margin, 1 - margin);
+    }
 
-      // Camera positioning for rectangles only (not sandbox)
-      if (!isMobileView && camera && !sandboxMode) {
-        // Rectangle centering logic for normal mode only - start later to coordinate with blob centering
-        const cameraCenteringProgress = easeInOutCubic(Math.max(0, (easedMorph - 0.3) / 0.7)); // Match blob centering timing
-        const sideX = 6;  // Starting side position (centered container)
+    // NON-SANDBOX MODE: Camera positioning for rectangles (moved outside easedMorph block like sandbox)
+    if (!sandboxMode && cameraCenteringProgressRef.current > 0 && !cameraReverseCenteringEnabledRef.current) {
+      const isMobileView = window.innerWidth < 768;
+      // Debug logging disabled to reduce console spam
+      // console.log(`🎥 CAMERA CHECK: sandboxMode=${sandboxMode}, centeringProgress=${cameraCenteringProgressRef.current.toFixed(3)}, reverseEnabled=${cameraReverseCenteringEnabledRef.current}, isMobile=${isMobileView}`);
+
+      if (!isMobileView && camera) {
+        // console.log(`🎯 CAMERA CENTERING ACTIVE: progress=${cameraCenteringProgressRef.current.toFixed(3)}`);
+
+        // Use gradual progress like sandbox mode instead of sudden easedMorph calculation
+        const sideX = 5;  // Starting side position (match initial camera setup!)
         const targetX = 0; // Target position to look at
-        const currentX = THREE.MathUtils.lerp(sideX, targetX, cameraCenteringProgress);
+        const easedProgress = easeInOutCubic(cameraCenteringProgressRef.current); // Apply easing like sandbox
 
-        // Smoothly interpolate camera position
-        const lerpSpeed = delta * 2;
-        camera.position.x = THREE.MathUtils.lerp(camera.position.x, currentX, lerpSpeed);
+        // Use same pattern as sandbox mode - lerp from fixed positions
+        const currentX = THREE.MathUtils.lerp(sideX, targetX, easedProgress);
+
+        // MOVE CAMERA CLOSER in two phases:
+        // Phase 1: Slight closer during convergence (0-60% of morph)
+        // Phase 2: Much closer during rectangle formation (60-100% of morph)
+        const baseCameraDistance = 25;
+        const responsiveScale = Math.min(window.innerWidth / 1200, window.innerHeight / 800);
+        const normalZ = Math.max(18, Math.min(35, baseCameraDistance * (1 / Math.sqrt(responsiveScale))));
+
+        const convergencePhase = Math.min(1, morphRef.current * 1.67); // 0-60% of full transition
+        const rectanglePhase = Math.max(0, (morphRef.current - 0.6) * 2.5); // 60-100% of full transition
+
+        let targetZ;
+        if (convergencePhase < 1) {
+          // Phase 1: Move slightly closer during convergence with smooth easing
+          const slightlyCloserZ = normalZ * 0.9; // 10% closer during convergence
+          const easedConvergence = easeInOutCubic(convergencePhase); // Add smooth easing
+          targetZ = THREE.MathUtils.lerp(normalZ, slightlyCloserZ, easedConvergence);
+        } else {
+          // Phase 2: Move much closer during rectangle formation with smooth easing
+          const slightlyCloserZ = normalZ * 0.9;
+          const muchCloserZ = normalZ * 0.6; // 40% closer for rectangle
+          const easedRectangle = easeInOutCubic(rectanglePhase); // Add smooth easing
+          targetZ = THREE.MathUtils.lerp(slightlyCloserZ, muchCloserZ, easedRectangle);
+        }
+
+        // Smoothly interpolate camera position with faster Z movement
+        const lerpSpeedX = delta * 3; // Keep X-axis at original speed
+        const lerpSpeedZ = delta * 10; // Very fast Z movement
+        camera.position.x = THREE.MathUtils.lerp(camera.position.x, currentX, lerpSpeedX);
+        camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetZ, lerpSpeedZ);
         camera.lookAt(currentX, 0, 0);
         camera.updateProjectionMatrix();
+
+        // Enhanced debug logging for Z movement (disabled to reduce spam)
+        /*if (Math.random() < 0.01) { // Log more frequently to debug
+          console.log(`🎯 CAMERA Z MOVEMENT: progress=${cameraCenteringProgressRef.current.toFixed(3)}, easedProgress=${easedProgress.toFixed(3)}, normalZ=${normalZ.toFixed(1)}, targetZ=${targetZ.toFixed(1)}, actualZ=${camera.position.z.toFixed(1)}`);
+        }*/
+      }
+    }
+
+    // REVERSE CAMERA POSITIONING: Move camera from center back to side position
+    if (cameraReverseCenteringProgressRef.current > 0) {
+      const isMobileView = window.innerWidth < 768;
+      if (!isMobileView && camera) {
+        // Store actual starting position when reverse movement begins
+        if (cameraReverseCenteringProgressRef.current <= 0.001 && !reverseStartPositionRef.current) {
+          reverseStartPositionRef.current = {
+            x: camera.position.x,
+            z: camera.position.z
+          };
+        }
+
+        // Use actual starting position instead of assuming center
+        const startX = reverseStartPositionRef.current?.x || 0;  // Use actual starting position
+        const startZ = reverseStartPositionRef.current?.z || (originalCameraDistanceRef.current * 0.6 || 15);
+        const targetX = 5;    // Target side position
+        const targetZDistance = originalCameraDistanceRef.current || 25; // Target original distance
+
+        const easedProgress = easeInOutCubic(cameraReverseCenteringProgressRef.current); // Apply easing
+
+        // Lerp from actual starting position back to side
+        const currentX = THREE.MathUtils.lerp(startX, targetX, easedProgress);
+        const currentZ = THREE.MathUtils.lerp(startZ, targetZDistance, easedProgress);
+
+        // Use direct positioning instead of lerp to avoid conflicts with camera setup effects
+        camera.position.x = currentX;
+        camera.position.z = currentZ;
+
+        camera.lookAt(currentX, 0, 0);
+        camera.updateProjectionMatrix();
+
+        // Enhanced debug logging
+
       }
     }
 
@@ -1399,7 +1708,7 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       const isMobileView = window.innerWidth < 768;
       if (!isMobileView && camera) {
         // Similar to rectangle centering - smoothly move camera to center position
-        const sideX = 6;  // Starting side position (same as normal mode)
+        const sideX = 5;  // Starting side position (match initial camera setup!)
         const targetX = 0; // Target center position
         const rawProgress = centeringProgressRef.current; // Raw linear progress
         const easedProgress = easeInOutCubic(rawProgress); // Apply easing
@@ -1411,8 +1720,28 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
         camera.lookAt(currentX, 0, 0);
         camera.updateProjectionMatrix();
 
-        console.log(`Sandbox: Camera centering - rawProgress: ${rawProgress.toFixed(3)}, easedProgress: ${easedProgress.toFixed(3)}, currentX: ${currentX.toFixed(3)}, camera.position.x: ${camera.position.x.toFixed(3)}`);
+
       }
+    }
+
+    // Mobile selected-state composition: bring the organism closer and lift it
+    // above the exact viewport midpoint. The HTML content is projected from the
+    // same origin, so the copy and surface remain locked together.
+    const isMobileComposition = window.innerWidth < 768;
+    if (isMobileComposition && camera && !sandboxMode) {
+      const mobileProgress = easeInOutCubic(easedMorph);
+      const baseCameraDistance = 25;
+      const normalMobileZ = Math.max(18, Math.min(35, baseCameraDistance * (1 / Math.sqrt(responsiveScale))));
+      const selectedMobileZ = normalMobileZ * 0.88;
+      const selectedMobileY = -1.35;
+      const cameraLerp = Math.min(1, delta * 2.8);
+      const targetCameraY = THREE.MathUtils.lerp(0, selectedMobileY, mobileProgress);
+      const targetCameraZ = THREE.MathUtils.lerp(normalMobileZ, selectedMobileZ, mobileProgress);
+
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0, cameraLerp);
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCameraY, cameraLerp);
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetCameraZ, cameraLerp);
+      camera.lookAt(0, targetCameraY, 0);
     }
 
     // Handle camera positioning and rectangle state resets based on current mode
@@ -1435,14 +1764,22 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
         depth: 0
       };
 
-      // Reset camera to side position when returning to lava state (desktop/tablet only)
-      // But only if NOT in sandbox mode (sandbox handles its own camera positioning)
+      // Ensure camera is at correct side position when truly in lava state
+      // Only when no camera animations are running
       const isMobileView = window.innerWidth < 768;
-      if (!isMobileView && camera && !sandboxMode) {
-        const sideX = 6;  // Side position for lava state (centered container)
-        camera.position.x = THREE.MathUtils.lerp(camera.position.x, sideX, delta * 2);
-        camera.lookAt(sideX, 0, 0);
-        camera.updateProjectionMatrix();
+      if (!isMobileView && camera && !sandboxMode &&
+          cameraCenteringProgressRef.current === 0 &&
+          cameraReverseCenteringProgressRef.current === 0 &&
+          centeringProgressRef.current === 0 && !cameraReverseCenteringEnabledRef.current &&
+          !cameraCenteringEnabledRef.current) {
+        // Only set position if camera is not already at the correct position
+        if (Math.abs(camera.position.x - 5) > 0.1) {
+
+
+          camera.position.x = 5;
+          camera.lookAt(5, 0, 0);
+          camera.updateProjectionMatrix();
+        }
       }
     }
 
@@ -1454,50 +1791,101 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
     const driftSpeed = 0.15; // Slower drift
     const driftReduction = rectanglePhase > 0 ? (1 - rectanglePhase * 0.8) : 1; // Reduce drift when rectangle forms
 
-    effect.position.x = Math.sin(currentTime * driftSpeed) * 0.05 * drift * driftReduction;
+    const selectedOrganismOffsetX = window.innerWidth < 768
+      ? 0
+      : THREE.MathUtils.lerp(0, -3.1, easedMorph);
+    effect.position.x = selectedOrganismOffsetX + Math.sin(currentTime * driftSpeed) * 0.05 * drift * driftReduction;
     effect.position.y = Math.sin(currentTime * driftSpeed * 0.5) * 0.025 * drift * driftReduction;
     effect.position.z = Math.sin(currentTime * driftSpeed * 0.85) * 0.05 * drift * driftReduction;
+
+    // Fit the living display to the same viewport coordinates as its content.
+    // Use camera geometry so portrait and wide screens retain the composition.
+    if (!sandboxMode && (window.innerWidth >= 768 || phaseRef.current === 'lava')) {
+      camera.position.y = 0;
+      camera.lookAt(camera.position.x, 0, 0);
+    }
+    const viewHeight = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z;
+    const viewWidth = viewHeight * camera.aspect;
+    if (!sandboxMode && phaseRef.current === 'lava') {
+      // Position in viewport space; a fixed world-space camera offset clipped
+      // the blob in tall split panes, even when its height fit the screen.
+      const layout = menuLayout(window.innerWidth, window.innerHeight);
+      effect.position.x = camera.position.x + viewWidth * (layout.blobX / window.innerWidth - .5);
+      effect.position.y = camera.position.y + viewHeight * (.5 - layout.blobY / window.innerHeight);
+      const nav = navigationRef.current;
+      if (nav) {
+        nav.style.setProperty('--menu-left', `${layout.menuLeft}px`);
+        nav.style.setProperty('--menu-top', `${layout.centerY}px`);
+        nav.style.setProperty('--menu-width', `${layout.menuWidth}px`);
+      }
+    }
+    const selectedScale = (window.innerWidth < 768 ? viewWidth * 0.61 : Math.min(viewWidth * 0.39, viewHeight * 0.59)) / 0.85;
+    const baseScale = CONTAINER_RADIUS * 2.2 * responsiveScale;
+    const normalScale = sandboxMode ? baseScale : menuBlobScale(window.innerWidth, window.innerHeight, camera.fov, camera.position.z, menuReferenceDiameter.current || 1);
+    const selectedBlend = easeInOutCubic(easedMorph);
+    effect.scale.setScalar(THREE.MathUtils.lerp(normalScale, selectedScale, selectedBlend));
+    const displayX = window.innerWidth < 768 ? camera.position.x : camera.position.x - viewWidth * .215;
+    const displayY = window.innerWidth < 768 ? camera.position.y + viewHeight * 0.21 : camera.position.y;
+    effect.position.x = THREE.MathUtils.lerp(effect.position.x, displayX, selectedBlend);
+    effect.position.y = THREE.MathUtils.lerp(effect.position.y, displayY, selectedBlend);
+    effect.position.y += (entityTransfer.current.scrollTop || 0) * viewHeight / window.innerHeight * selectedBlend;
+    if (!prefersReducedMotion) {
+      effect.position.x += entityPointer.current.x * 0.18 * selectedBlend;
+      effect.position.y -= entityPointer.current.y * 0.12 * selectedBlend;
+    }
+
+    const inkProgress = entityTransfer.current.progress ?? Infinity;
+    if (!prefersReducedMotion && inkProgress > .27 && inkProgress < 1) {
+      const recoilTime = (inkProgress - .27) * 1.95;
+      const recoil = Math.sin(recoilTime * 16) * Math.exp(-recoilTime * 7) * .07;
+      if (window.innerWidth < 768) effect.position.y += recoil;
+      else effect.position.x -= recoil;
+    }
 
     // Smoother rotation handling
     if (easedMorph < 0.01) {
       // Lava lamp state - normal rotation
-      effect.rotation.y += 0.002;
+      effect.rotation.y += prefersReducedMotion ? 0 : .12 * delta;
     } else if (easedMorph > 0.99) {
       // Rectangle state - lock facing forward
-      effect.rotation.y = THREE.MathUtils.lerp(effect.rotation.y, 0, 0.1);
-      effect.rotation.x = THREE.MathUtils.lerp(effect.rotation.x, 0, 0.1);
-      effect.rotation.z = THREE.MathUtils.lerp(effect.rotation.z, 0, 0.1);
+      effect.rotation.y = THREE.MathUtils.damp(effect.rotation.y, 0, 6.32, delta);
+      effect.rotation.x = THREE.MathUtils.damp(effect.rotation.x, 0, 6.32, delta);
+      effect.rotation.z = THREE.MathUtils.damp(effect.rotation.z, 0, 6.32, delta);
     } else {
       // Transitioning - smooth interpolation to front-facing
-      const rotLerp = easedMorph * 0.05;
+      const rotLerp = 1 - Math.exp(-easedMorph * 3 * delta);
       effect.rotation.y = THREE.MathUtils.lerp(effect.rotation.y, 0, rotLerp);
       effect.rotation.x = THREE.MathUtils.lerp(effect.rotation.x, 0, rotLerp);
       effect.rotation.z = THREE.MathUtils.lerp(effect.rotation.z, 0, rotLerp);
     }
 
-    // BALANCED MORPHING PROGRESSION - slower convergence timing
-    const toRectDuration = 4.5; // Increased from 3.0 for slower convergence
-    const toLavaDuration = 2.0; // Reduced from 2.5
-    const lavaHoldDuration = 0.3; // Keep the same
+    // BALANCED MORPHING PROGRESSION - faster convergence timing
+    const lavaHoldDuration = 0.2; // Reduced from 0.3
 
     if (phaseRef.current === 'toRect') {
-      setMorphingProgress((p) => {
-        // Use smaller increments for smoother animation
-        const increment = delta / toRectDuration;
-        const np = Math.min(1, p + increment);
+      {
+        const np = morphRef.current;
         if (np >= 1) {
           setPhaseBoth('rect');
           setMenuHidden(true); // Hide menu when rectangle is fully formed
+          if (window.innerWidth < 768) setMenuClicked(false);
           wheelLockedRef.current = false;
           hasCompletedFirstCycle.current = true;
         }
-        return np;
-      });
+      }
     } else if (phaseRef.current === 'toLava') {
-      setMorphingProgress((p) => {
-        // Use smaller decrements for smoother animation
-        const decrement = delta / toLavaDuration;
-        const np = Math.max(0, p - decrement);
+      // ENSURE REVERSE CENTERING IS ACTIVE during toLava phase if not in sandbox mode
+      // Only initialize if reverse centering hasn't been started or completed
+      if (!sandboxMode && !cameraReverseCenteringEnabledRef.current && cameraReverseCenteringProgressRef.current === 0) {
+
+        cameraCenteringProgressRef.current = 0;  // FORCE forward centering to 0 immediately
+        cameraCenteringEnabledRef.current = false;
+        cameraReverseCenteringEnabledRef.current = true;
+        cameraReverseCenteringProgressRef.current = 0.001;
+      }
+
+      {
+        const np = morphRef.current;
         if (np <= 0) {
           // Reset states when fully back to lava
           rectangleStateRef.current = {
@@ -1519,7 +1907,7 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
 
           if (queuedSectionRef.current !== null) {
             setPhaseBoth('lavaHold');
-            setTimeout(() => {
+            scheduleTimeout(() => {
               if (phaseRef.current === 'lavaHold') {
                 const nxt = queuedSectionRef.current;
                 queuedSectionRef.current = null;
@@ -1548,915 +1936,184 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
                   chosenBlobPosRef.current.copy(satellitePositionsRef.current[closestIdx]);
                 }
 
-                setMorphingProgress(0); // Start from true 0 instead of 0.001
+                morphRef.current = 0; // Start from true 0 instead of 0.001
                 setScrollProgress(0);
                 setPhaseBoth('toRect');
               }
             }, lavaHoldDuration * 1000);
           } else {
             setPhaseBoth('lava');
+            cameraReverseCenteringEnabledRef.current = false;
+            cameraReverseCenteringProgressRef.current = 0;
+            if (window.innerWidth >= 768) {
+              camera.position.x = 5;
+              camera.lookAt(5, 0, 0);
+            }
+
             setMenuHidden(false); // Show menu when returning to lava phase
             setMenuClicked(false); // Reset clicked state
+            wheelLockedRef.current = false; // Unlock wheel to allow menu interactions
           }
         }
-        return np;
-      });
+      }
     }
 
-    // Metaball simulation update - smoother and more stable
-    if (sim.lastTime !== 0) {
-      const elapsed = sim.clock.getElapsedTime() - sim.lastTime;
-      sim.time += elapsed * sim.speed;
-    }
-    sim.lastTime = sim.clock.getElapsedTime();
+    // sim.time advances once above using the render delta. The second advance
+    // here previously doubled motion and amplified uneven frame intervals.
 
     // Update simulation speed and strength from adjustable parameters
     sim.speed = adjustableParams.speed;
     sim.strength = adjustableParams.strength;
 
-    // Update metaballs with adaptive quality
-    if (marchingCubesRef.current) {
-      const quality = Math.min(1.0, Math.max(0.5, perfRef.current.quality));
+  }, -2);
 
-      // RECTANGLE PERFORMANCE OPTIMIZATION: Reduce update frequency during rectangle formation
-      let updateFrequency = 1;
-
-      if (rectanglePhase > 0) {
-        // During rectangle formation, update less frequently for better performance
-        updateFrequency = rectanglePhase > 0.8 ? 3 : 2; // Every 2-3 frames during rectangle
-      }
-
-      if (quality < 1.0 || rectanglePhase > 0) {
-        // Skip some updates to reduce load
-        const skipFrames = rectanglePhase > 0 ? updateFrequency : Math.ceil(1 / quality);
-        if (sim.frameCount % skipFrames === 0) {
-          updateMetaballs(
-            marchingCubesRef.current,
-            sim.time,
-            adjustableParams.numMetaballs,
-            adjustableParams.strength,
-            sim.subtract,
-            morphRef.current,
-            adjustableParams
-          );
-        }
-      } else {
-        // Full quality - regular updates (only when not in rectangle mode)
-        updateMetaballs(
-          marchingCubesRef.current,
-          sim.time,
-          adjustableParams.numMetaballs,
-          adjustableParams.strength,
-          sim.subtract,
-          morphRef.current,
-          adjustableParams
-        );
-      }
+  // Evaluate the field after the body transform (-2) and ejection (-1).
+  useFrame((_, delta) => {
+    const sim = simRef.current;
+    const effect = marchingCubesRef.current;
+    if (!effect || !sim.initialized || sim.freezeAnimation || document.hidden) return;
+    if (entityTransfer.current.pose && phaseRef.current !== 'lava') return;
+    const resolution = updateQuality(perfRef.current, delta, phaseRef.current === 'lava');
+    if (resolution !== null) {
+      effect.geometry.dispose();
+      effect.init(resolution);
     }
-
-    // Performance management - adjust quality based on frame time
-    const fps = 1 / delta;
-
-    // More aggressive performance adjustment during rectangle formation
-    if (rectanglePhase > 0) {
-      // Lower FPS threshold during rectangle formation
-      if (fps < 15) {
-        perfRef.current.quality = Math.max(0.3, perfRef.current.quality - 0.1); // More aggressive reduction
-      } else if (fps > 25) {
-        perfRef.current.quality = Math.min(0.8, perfRef.current.quality + 0.05); // Cap at 0.8 during rectangle
+    const started = performance.now();
+    updateMetaballs(effect, sim.time, adjustableParams.numMetaballs,
+      adjustableParams.strength, sim.subtract, morphRef.current, adjustableParams);
+    if (!sandboxMode && phaseRef.current === 'lava') {
+      if (menuReferenceDiameter.current === null) {
+        menuReferenceDiameter.current = measureMenuReference(effect.geometry);
       }
-    } else {
-      // Normal performance management during lava mode
-      if (fps < 10) {
-        perfRef.current.quality = Math.min(1.0, perfRef.current.quality + 0.05);
-      } else if (fps > 30) {
-        perfRef.current.quality = Math.max(0.5, perfRef.current.quality - 0.05);
-      }
+      effect.scale.setScalar(menuBlobScale(window.innerWidth, window.innerHeight, camera.fov, camera.position.z, menuReferenceDiameter.current));
+      keepBlobClearOfMenu(effect, camera, menuLayout(window.innerWidth, window.innerHeight), window.innerWidth, window.innerHeight);
     }
-
-    // Track frame count for performance analysis
     sim.frameCount++;
-  });
-
-  // Slider Control Panel Component
-  const ControlPanel = ({ params, responsiveScale, onParamChange, embedded = false }) => {
-    const [isVisible, setIsVisible] = useState(true);
-
-    const resetToDefaults = () => {
-      const defaults = {
-        numMetaballs: 1,
-        isolation: 300,
-        strength: 4.2,
-        internalWarpStrength: 0.1,
-        asymmetryFactor: 20,
-        jiggleIntensity: 0,
-        maxDistance: 0.35,
-        speed: 1.02
-      };
-
-      // Update all parameters at once
-      Object.keys(defaults).forEach(key => {
-        onParamChange(key, defaults[key]);
-      });
-    };
-
-    const isMobile = window.innerWidth < 768;
-    const isTablet = window.innerWidth < 1200;
-
-    const sliderStyle = {
-      margin: isMobile ? '6px 0' : '8px 0',
-      display: 'flex',
-      alignItems: 'center',
-      gap: isMobile ? '6px' : '8px',
-      justifyContent: 'space-between'
-    };
-
-    const labelStyle = {
-      minWidth: isMobile ? '90px' : (isTablet ? '110px' : '130px'),
-      fontSize: embedded ? '12px' : (isMobile ? '10px' : (isTablet ? '11px' : '12px')),
-      color: embedded ? 'rgba(255, 255, 255, 0.9)' : '#333',
-      flexShrink: 0,
-      textShadow: embedded ? '0 1px 2px rgba(0, 0, 0, 0.3)' : 'none'
-    };
-
-    const inputStyle = {
-      width: isMobile ? '80px' : (isTablet ? '90px' : '100px'),
-      height: isMobile ? '18px' : '20px',
-      flexShrink: 0
-    };
-
-    const valueStyle = {
-      minWidth: isMobile ? '35px' : '45px',
-      fontSize: embedded ? '11px' : (isMobile ? '9px' : '11px'),
-      color: embedded ? 'rgba(255, 255, 255, 0.8)' : '#666',
-      textAlign: 'right',
-      paddingLeft: '5px',
-      textShadow: embedded ? '0 1px 2px rgba(0, 0, 0, 0.3)' : 'none'
-    };
-
-    const buttonStyle = {
-      background: embedded ? 'rgba(255, 255, 255, 0.1)' : '#f0f0f0',
-      border: embedded ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid #ccc',
-      borderRadius: '8px',
-      padding: '8px 12px',
-      fontSize: '11px',
-      cursor: 'pointer',
-      marginTop: '10px',
-      width: '100%',
-      color: embedded ? 'white' : '#333',
-      backdropFilter: embedded ? 'blur(10px)' : 'none',
-      textShadow: embedded ? '0 1px 2px rgba(0, 0, 0, 0.3)' : 'none',
-      transition: 'all 0.2s ease'
-    };
-
-    const panelStyle = embedded ? {
-      background: 'transparent',
-      padding: '0',
-      borderRadius: '0',
-      boxShadow: 'none',
-      zIndex: 'auto',
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '12px',
-      width: '100%',
-      opacity: 1,
-      pointerEvents: 'auto'
-    } : {
-      position: 'fixed',
-      top: isMobile ? '10px' : '20px',
-      right: isMobile ? '10px' : '20px',
-      background: 'rgba(255, 255, 255, 0.95)',
-      padding: isMobile ? '8px' : (isTablet ? '12px' : '15px'),
-      borderRadius: '8px',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
-      zIndex: 10000,
-      fontFamily: 'Arial, sans-serif',
-      fontSize: isMobile ? '10px' : (isTablet ? '11px' : '12px'),
-      maxHeight: '80vh',
-      overflowY: 'auto',
-      width: isMobile ? '220px' : (isTablet ? '260px' : '300px'),
-      transition: 'opacity 0.3s ease',
-      opacity: isVisible ? 1 : 0.3,
-      pointerEvents: 'auto'
-    };
-
-    const toggleStyle = {
-      position: 'absolute',
-      top: '5px',
-      right: '8px',
-      background: 'none',
-      border: 'none',
-      fontSize: '16px',
-      cursor: 'pointer',
-      opacity: 0.7
-    };
-
-    return (
-      <div style={panelStyle} onMouseEnter={() => setIsVisible(true)} onMouseLeave={() => setIsVisible(false)}>
-        <button style={toggleStyle} onClick={() => setIsVisible(!isVisible)}>
-          {isVisible ? '−' : '+'}
-        </button>
-        <h3 style={{ margin: '0 0 15px 0', fontSize: '14px', color: '#222' }}>
-          Lava Lamp Controls
-          <div style={{ fontSize: '10px', color: '#888', fontWeight: 'normal' }}>
-            Settings auto-saved • Scale: {(responsiveScale * 100).toFixed(0)}%
-          </div>
-        </h3>
-
-        <div style={sliderStyle}>
-          <label style={labelStyle}>Metaballs:</label>
-          <input
-            type="range"
-            min="1"
-            max="15"
-            step="1"
-            value={params.numMetaballs}
-            onChange={(e) => onParamChange('numMetaballs', parseInt(e.target.value))}
-            style={inputStyle}
-          />
-          <span style={valueStyle}>{params.numMetaballs}</span>
-        </div>
-
-        <div style={sliderStyle}>
-          <label style={labelStyle}>Isolation:</label>
-          <input
-            type="range"
-            min="10"
-            max="300"
-            step="5"
-            value={params.isolation}
-            onChange={(e) => onParamChange('isolation', parseInt(e.target.value))}
-            style={inputStyle}
-          />
-          <span style={valueStyle}>{params.isolation}</span>
-        </div>
-
-        <div style={sliderStyle}>
-          <label style={labelStyle}>Strength:</label>
-          <input
-            type="range"
-            min="0.1"
-            max="10"
-            step="0.1"
-            value={params.strength}
-            onChange={(e) => onParamChange('strength', parseFloat(e.target.value))}
-            style={inputStyle}
-          />
-          <span style={valueStyle}>{params.strength}</span>
-        </div>
-
-        <div style={sliderStyle}>
-          <label style={labelStyle}>Warp Strength:</label>
-          <input
-            type="range"
-            min="0.1"
-            max="10"
-            step="0.1"
-            value={params.internalWarpStrength}
-            onChange={(e) => onParamChange('internalWarpStrength', parseFloat(e.target.value))}
-            style={inputStyle}
-          />
-          <span style={valueStyle}>{params.internalWarpStrength}</span>
-        </div>
-
-        <div style={sliderStyle}>
-          <label style={labelStyle}>Asymmetry:</label>
-          <input
-            type="range"
-            min="0.1"
-            max="20"
-            step="0.1"
-            value={params.asymmetryFactor}
-            onChange={(e) => onParamChange('asymmetryFactor', parseFloat(e.target.value))}
-            style={inputStyle}
-          />
-          <span style={valueStyle}>{params.asymmetryFactor}</span>
-        </div>
-
-        <div style={sliderStyle}>
-          <label style={labelStyle}>Jiggle:</label>
-          <input
-            type="range"
-            min="0"
-            max="5"
-            step="0.1"
-            value={params.jiggleIntensity}
-            onChange={(e) => onParamChange('jiggleIntensity', parseFloat(e.target.value))}
-            style={inputStyle}
-          />
-          <span style={valueStyle}>{params.jiggleIntensity}</span>
-        </div>
-
-        <div style={sliderStyle}>
-          <label style={labelStyle}>Max Distance:</label>
-          <input
-            type="range"
-            min="0.1"
-            max="2"
-            step="0.05"
-            value={params.maxDistance}
-            onChange={(e) => onParamChange('maxDistance', parseFloat(e.target.value))}
-            style={inputStyle}
-          />
-          <span style={valueStyle}>{params.maxDistance}</span>
-        </div>
-
-        <div style={sliderStyle}>
-          <label style={labelStyle}>Speed:</label>
-          <input
-            type="range"
-            min="0.01"
-            max="2"
-            step="0.01"
-            value={params.speed}
-            onChange={(e) => onParamChange('speed', parseFloat(e.target.value))}
-            style={inputStyle}
-          />
-          <span style={valueStyle}>{params.speed}</span>
-        </div>
-
-        <button
-          style={buttonStyle}
-          onClick={resetToDefaults}
-          onMouseOver={(e) => e.target.style.background = '#e0e0e0'}
-          onMouseOut={(e) => e.target.style.background = '#f0f0f0'}
-        >
-          Reset to Defaults
-        </button>
-      </div>
-    );
-  };
-
-  // Glassmorphism Sandbox Panel Component
-  const SandboxPanel = () => {
-    console.log('SandboxPanel render check:', {
-      sandboxMode,
-      currentSection,
-      phase,
-      shouldShow: sandboxMode && currentSection === 3
-    });
-
-    if (!sandboxMode || currentSection !== 3) {
-      console.log('SandboxPanel not showing - conditions not met:', {
-        sandboxMode,
-        currentSection,
-        requiredSection: 3
-      });
-      return null;
+    if (import.meta.env.DEV) {
+      const profile = profileRef.current;
+      if (profile.phase !== phaseRef.current) {
+        if (profile.frames.length && (profile.phase === 'toRect' || profile.phase === 'toLava')) {
+          const sorted = [...profile.frames].sort((a, b) => a - b);
+          console.info('[Blob profile]', JSON.stringify({
+            phase: profile.phase, frames: sorted.length,
+            medianMs: +sorted[Math.floor(sorted.length * .5)].toFixed(1),
+            p95Ms: +sorted[Math.floor(sorted.length * .95)].toFixed(1),
+            meshMs: +(profile.mesh.reduce((a, b) => a + b, 0) / profile.mesh.length).toFixed(1),
+            resolution: effect.resolution, geometries: gl.info.memory.geometries,
+            textures: gl.info.memory.textures
+          }));
+        }
+        profile.phase = phaseRef.current;
+        profile.frames = []; profile.mesh = [];
+      }
+      if (profile.frames.length < 600) {
+        profile.frames.push(delta * 1000);
+        profile.mesh.push(performance.now() - started);
+      }
     }
-
-    console.log('SandboxPanel showing!');
-
-    // Test div to ensure rendering works
-    return (
-      <>
-        {/* Simple test div */}
-        <div style={{
-          position: 'fixed',
-          top: '100px',
-          left: '100px',
-          width: '200px',
-          height: '100px',
-          background: 'red',
-          zIndex: 60000,
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '16px',
-          fontWeight: 'bold'
-        }}>
-          SANDBOX TEST
-        </div>
-
-        <div style={panelStyle}>
-          <div style={headerStyle}>
-            <h2 style={titleStyle}>🎛️ Sandbox Mode</h2>
-            <p style={subtitleStyle}>Experiment with lava lamp parameters and color themes in real-time</p>
-          </div>
-
-          <div style={contentStyle}>
-            {/* Lava Lamp Controls Section */}
-            <div style={sectionStyle}>
-              <h3 style={sectionTitleStyle}>🌊 Lava Lamp Controls</h3>
-              <ControlPanel
-                params={adjustableParams}
-                responsiveScale={responsiveScale}
-                onParamChange={(param, value) => {
-                  setAdjustableParams(prev => ({ ...prev, [param]: value }));
-                }}
-                embedded={true}
-              />
-            </div>
-
-            {/* Color Themes Section */}
-            <div style={sectionStyle}>
-              <h3 style={sectionTitleStyle}>🎨 Color Themes</h3>
-              <ColorThemePanel />
-            </div>
-          </div>
-        </div>
-
-        {/* Add keyframe animation via injected style */}
-        <style>
-          {`
-            @keyframes sandboxFadeIn {
-              from { 
-                opacity: 0; 
-                transform: translate(-50%, -50%) scale(0.9);
-              }
-              to { 
-                opacity: 1; 
-                transform: translate(-50%, -50%) scale(1);
-              }
-            }
-          `}
-        </style>
-      </>
-    );
-
-    const panelStyle = {
-      position: 'fixed',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%)',
-      width: '90vw',
-      maxWidth: '900px',
-      height: '70vh',
-      minHeight: '400px',
-      background: 'rgba(255, 0, 0, 0.9)', // Bright red background for debugging
-      backdropFilter: 'blur(20px)',
-      WebkitBackdropFilter: 'blur(20px)',
-      borderRadius: '24px',
-      border: '5px solid yellow', // Bright yellow border for debugging
-      boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-      zIndex: 50000, // Much higher z-index
-      overflow: 'auto',
-      animation: 'sandboxFadeIn 0.5s ease-out',
-      display: 'flex',
-      flexDirection: 'column'
-    };
-
-    const headerStyle = {
-      padding: '24px 32px 16px',
-      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05))'
-    };
-
-    const titleStyle = {
-      color: 'white',
-      fontSize: '24px',
-      fontWeight: '600',
-      margin: '0 0 8px 0',
-      textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)'
-    };
-
-    const subtitleStyle = {
-      color: 'rgba(255, 255, 255, 0.8)',
-      fontSize: '14px',
-      margin: 0,
-      textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)'
-    };
-
-    const contentStyle = {
-      padding: '24px 32px',
-      flex: 1,
-      display: 'grid',
-      gridTemplateColumns: window.innerWidth < 768 ? '1fr' : '1fr 1fr',
-      gap: '32px',
-      overflowY: 'auto'
-    };
-
-    const sectionStyle = {
-      background: 'rgba(255, 255, 255, 0.05)',
-      borderRadius: '16px',
-      padding: '20px',
-      border: '1px solid rgba(255, 255, 255, 0.1)'
-    };
-
-    const sectionTitleStyle = {
-      color: 'white',
-      fontSize: '18px',
-      fontWeight: '500',
-      margin: '0 0 16px 0',
-      textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)'
-    };
-
-    return (
-      <>
-        <div style={panelStyle}>
-          <div style={headerStyle}>
-            <h2 style={titleStyle}>🎛️ Sandbox Mode</h2>
-            <p style={subtitleStyle}>Experiment with lava lamp parameters and color themes in real-time</p>
-          </div>
-
-          <div style={contentStyle}>
-            {/* Lava Lamp Controls Section */}
-            <div style={sectionStyle}>
-              <h3 style={sectionTitleStyle}>🌊 Lava Lamp Controls</h3>
-              <ControlPanel
-                params={adjustableParams}
-                responsiveScale={responsiveScale}
-                onParamChange={(param, value) => {
-                  setAdjustableParams(prev => ({ ...prev, [param]: value }));
-                }}
-                embedded={true}
-              />
-            </div>
-
-            {/* Color Themes Section */}
-            <div style={sectionStyle}>
-              <h3 style={sectionTitleStyle}>🎨 Color Themes</h3>
-              <ColorThemePanel />
-            </div>
-          </div>
-        </div>
-
-        {/* Add keyframe animation via injected style */}
-        <style>
-          {`
-            @keyframes sandboxFadeIn {
-              from { 
-                opacity: 0; 
-                transform: translate(-50%, -50%) scale(0.9);
-              }
-              to { 
-                opacity: 1; 
-                transform: translate(-50%, -50%) scale(1);
-              }
-            }
-          `}
-        </style>
-      </>
-    );
-  };
-
-  // Color Theme Panel Component
-  const ColorThemePanel = () => {
-    const colorThemes = [
-      { name: 'Ocean', base: new THREE.Color(0x4FC3F7), highlight: new THREE.Color(0x29B6F6), background: new THREE.Color(0x0D47A1) },
-      { name: 'Sunset', base: new THREE.Color(0xFF7043), highlight: new THREE.Color(0xFF5722), background: new THREE.Color(0xBF360C) },
-      { name: 'Forest', base: new THREE.Color(0x66BB6A), highlight: new THREE.Color(0x4CAF50), background: new THREE.Color(0x1B5E20) },
-      { name: 'Purple', base: new THREE.Color(0xAB47BC), highlight: new THREE.Color(0x9C27B0), background: new THREE.Color(0x4A148C) },
-      { name: 'Gold', base: new THREE.Color(0xFFD54F), highlight: new THREE.Color(0xFFC107), background: new THREE.Color(0xFF8F00) },
-      { name: 'Ice', base: new THREE.Color(0x81D4FA), highlight: new THREE.Color(0x03A9F4), background: new THREE.Color(0x01579B) }
-    ];
-
-    const themeGridStyle = {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
-      gap: '12px',
-      marginTop: '8px'
-    };
-
-    const themeButtonStyle = (theme) => ({
-      padding: '12px',
-      borderRadius: '12px',
-      border: '1px solid rgba(255, 255, 255, 0.2)',
-      background: `linear-gradient(135deg, rgb(${theme.base.r * 255}, ${theme.base.g * 255}, ${theme.base.b * 255}), rgb(${theme.highlight.r * 255}, ${theme.highlight.g * 255}, ${theme.highlight.b * 255}))`,
-      color: 'white',
-      fontSize: '12px',
-      fontWeight: '500',
-      cursor: 'pointer',
-      transition: 'all 0.2s ease',
-      textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)'
-    });
-
-    const applyTheme = (theme) => {
-      setColor1(theme.base);
-      setColor2(theme.highlight);
-      // You can also update background color if needed
-    };
-
-    return (
-      <div style={themeGridStyle}>
-        {colorThemes.map((theme, index) => (
-          <button
-            key={index}
-            style={themeButtonStyle(theme)}
-            onClick={() => applyTheme(theme)}
-            onMouseEnter={(e) => {
-              e.target.style.transform = 'scale(1.05)';
-              e.target.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.3)';
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.transform = 'scale(1)';
-              e.target.style.boxShadow = 'none';
-            }}
-          >
-            {theme.name}
-          </button>
-        ))}
-      </div>
-    );
-  };
+  });
 
   // Navigation Menu Component
   const NavigationMenu = () => {
-    const isMobile = window.innerWidth < 768;
-    const isTablet = window.innerWidth < 1200;
-
-    // Debug window size
-    console.log('Window size:', window.innerWidth, 'isMobile:', isMobile);
-
-    // Calculate opacity based on state - faster fade transition
-    const getMenuOpacity = () => {
-      // Handle menuClicked fade animation first (for all modes including sandbox)
-      if (menuClicked) {
-        return Math.max(0, 1 - menuFadeProgress);
-      }
-
-      // Keep menu hidden in sandbox mode after fade completes
-      if (sandboxMode && currentSection === 3) return 0;
-
-      if (phase === 'rect') return 0;
-      if (phase === 'toRect') {
-        // Much faster fade - complete in first 20% of transition
-        const fadeStart = 0.05; // Start fading at 5% of transition
-        const fadeEnd = 0.2;    // Complete fade at 20% of transition
-        if (morphingProgress <= fadeStart) return 1;
-        if (morphingProgress >= fadeEnd) return 0;
-        const fadeProgress = (morphingProgress - fadeStart) / (fadeEnd - fadeStart);
-        return 1 - fadeProgress;
-      }
-      if (phase === 'toLava') {
-        // Fade back in during return transition
-        const fadeProgress = 1 - morphingProgress;
-        return Math.min(1, fadeProgress * 1.2); // Slightly faster fade in
-      }
-      // Default lava state - return 1 for normal visibility
-      return 1;
-    };
-
-    const currentOpacity = getMenuOpacity();
-
-    // Debug logging
-    console.log('Menu state render:', {
-      phase,
-      morphingProgress,
-      menuClicked,
-      opacity: currentOpacity,
-      currentSection,
-      sandboxMode
-    });
+    const layout = menuLayout(window.innerWidth, window.innerHeight);
 
     const menuStyle = {
-      position: 'fixed',
-      // Side-by-side layout: menu on right side for desktop/tablet, bottom for mobile
-      ...(isMobile
-        ? {
-          left: '50%',
-          bottom: '30px',
-          transform: 'translateX(-50%)',
-          display: 'flex',
-          flexDirection: 'row',
-          gap: '20px',
-          justifyContent: 'center'
-        }
-        : {
-          left: '50%',  // Start from center
-          top: '50%',
-          transform: 'translateY(-50%) translateX(120%)',  // Move much much further right
-          display: 'flex',
-          flexDirection: 'column'
-        }
-      ),
-      zIndex: 10000,
-      fontFamily: 'Arial, sans-serif',
-      opacity: currentOpacity,
-      pointerEvents: (currentOpacity < 0.1) ? 'none' : 'auto',
-      // Force hardware acceleration
-      willChange: 'opacity',
-      backfaceVisibility: 'hidden',
+      '--menu-left': `${layout.menuLeft}px`,
+      '--menu-top': `${layout.centerY}px`,
+      '--menu-width': `${layout.menuWidth}px`,
     };
+    const hoveredIndex = hoveredSection;
 
-    const menuItemStyle = (isActive, isHovered) => ({
-      display: 'flex',
-      alignItems: 'center',
-      margin: isMobile ? '0 10px' : '20px 0',  // Horizontal spacing for mobile, vertical for desktop
-      cursor: 'pointer',
-      transition: 'all 0.3s ease',
-      transform: isHovered ? (isMobile ? 'translateY(-5px)' : 'translateX(10px)') : 'translate(0)',
-      padding: '8px 12px',
-      borderRadius: '6px',
-      background: isHovered
-        ? `rgba(${Math.round(baseColor.r * 255)}, ${Math.round(baseColor.g * 255)}, ${Math.round(baseColor.b * 255)}, 0.9)`
-        : 'transparent',
-    });
+    return createPortal(<>
+      <nav ref={navigationRef} className="symbiote-nav" style={menuStyle} aria-label="Portfolio navigation">
+        <ol>
+          {portfolioSections.map((section) => {
+            const isActive = currentSection === section.id && phase === 'rect';
+            const isHovered = hoveredIndex === section.id;
 
-    const labelStyle = (isActive, isHovered) => ({
-      color: isHovered
-        ? `rgb(${Math.round(backgroundColor.r * 255)}, ${Math.round(backgroundColor.g * 255)}, ${Math.round(backgroundColor.b * 255)})`
-        : `rgb(${Math.round(baseColor.r * 255)}, ${Math.round(baseColor.g * 255)}, ${Math.round(baseColor.b * 255)})`,
-      fontSize: isMobile ? '14px' : (isTablet ? '16px' : '18px'),
-      fontWeight: isActive ? 'bold' : '500',
-      transition: 'all 0.3s ease',
-      textTransform: 'uppercase',
-      letterSpacing: '1px',
-    });
-
-    const [hoveredIndex, setHoveredIndex] = useState(null);
-
-    return (
-      <div style={menuStyle}>
-        {portfolioSections.map((section, index) => {
-          const isActive = currentSection === index && phase === 'rect';
-          const isHovered = hoveredIndex === index;
-
-          return (
-            <div
-              key={section.id}
-              style={menuItemStyle(isActive, isHovered)}
-              onClick={() => {
-                console.log('Menu item clicked:', { section: section.name, index, sectionId: section.id });
-                handleMenuSelection(index);
-              }}
-              onMouseEnter={() => setHoveredIndex(index)}
-              onMouseLeave={() => setHoveredIndex(null)}
-            >
-              <span style={labelStyle(isActive, isHovered)}>
-                {section.name}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+            return (
+              <li key={section.id}>
+                <button
+                  type="button"
+                  data-section={section.id}
+                  className={`${isActive ? 'is-active' : ''} ${isHovered ? 'is-hovered' : ''}`}
+                  aria-current={isActive ? 'page' : undefined}
+                  onClick={() => handleMenuSelection(section.id)}
+                  onFocus={() => setHoveredSection(section.id)}
+                  onBlur={() => setHoveredSection(null)}
+                  onMouseEnter={() => {
+                    setHoveredSection(section.id);
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredSection(null);
+                  }}
+                >
+                  <span className="symbiote-nav__label">{section.name}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
+      <canvas ref={menuInkCanvasRef} className="symbiote-menu-ink" aria-hidden="true" />
+    </>, document.body
     );
   };
 
-  // Back to Menu Component - appears when rectangle is open
-  const BackToMenu = () => {
-    const isMobile = window.innerWidth < 768;
-    const isTablet = window.innerWidth < 1200;
-
-    // Only show when rectangle is open
-    const isBackVisible = phase === 'rect';
-
-    const backButtonStyle = {
-      position: 'fixed',
-      top: isMobile ? '20px' : '30px',
-      left: isMobile ? '20px' : '30px',
-      zIndex: 10001,
-      opacity: isBackVisible ? 1 : 0,
-      pointerEvents: isBackVisible ? 'auto' : 'none',
-      transition: 'opacity 0.3s ease',
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      gap: isMobile ? '6px' : '8px',
-      padding: isMobile ? '8px 12px' : '10px 16px',
-      background: 'rgba(0, 0, 0, 0.7)',
-      borderRadius: '25px',
-      backdropFilter: 'blur(10px)',
-      border: '1px solid rgba(255, 255, 255, 0.1)',
-    };
-
-    const iconStyle = {
-      width: isMobile ? '16px' : '20px',
-      height: isMobile ? '16px' : '20px',
-      color: '#ffffff',
-      strokeWidth: '2px',
-    };
-
-    const textStyle = {
-      color: '#ffffff',
-      fontSize: isMobile ? '12px' : '14px',
-      fontWeight: '500',
-      fontFamily: 'Arial, sans-serif',
-      letterSpacing: '0.5px',
-    };
-
-    const handleBackClick = () => {
-      if (phase === 'rect') {
-        setPhaseBoth('toLava');
-        setMenuHidden(false); // Show menu again when going back to lava
-        setMenuClicked(false); // Reset clicked state
-        wheelLockedRef.current = true;
-        lastWheelActionRef.current = Date.now();
-      }
-    };
-
-    return (
-      <div style={backButtonStyle} onClick={handleBackClick}>
-        <svg style={iconStyle} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-        </svg>
-        {!isMobile && <span style={textStyle}>Back to Menu</span>}
-      </div>
-    );
-  };
 
   return (
     <group>
-      {marchingCubesRef.current && <primitive object={marchingCubesRef.current} />}
-      {!(sandboxMode && currentSection === 3) && <OrbitControls enableZoom={false} />}
-      <Stats />
-      <Html>
-        <NavigationMenu />
-        <BackToMenu />
+      {currentSection !== 3 && <SuspendedFluid phase={phase} transfer={entityTransfer} reducedMotion={prefersReducedMotion} paused={simRef} baseColor={baseColor} highlightColor={highlightColor} />}
+      <InkEjection transfer={entityTransfer} bodyRef={marchingCubesRef} active={phase === 'toRect' || phase === 'rect' || phase === 'toLava'} reducedMotion={prefersReducedMotion} />
+      {/* OrbitControls temporarily disabled to fix camera positioning conflicts */}
+      {/* {!(sandboxMode && currentSection === 3) && <OrbitControls enableZoom={false} />} */}
+      <Html fullscreen>
+        {NavigationMenu()}
 
-        {/* Glassmorphism Sandbox Controls Panel */}
-        {sandboxMode && currentSection === 3 && (
-          <div style={{
-            position: 'fixed',
-            right: '20px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: '320px',
-            maxHeight: '80vh',
-            overflowY: 'auto',
-            background: 'rgba(255, 255, 255, 0.1)',
-            backdropFilter: 'blur(10px)',
-            borderRadius: '16px',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            padding: '24px',
-            zIndex: 15000,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
-          }}>
-            <div style={{
-              marginBottom: '20px',
-              textAlign: 'center'
-            }}>
-              <h2 style={{
-                margin: '0 0 8px 0',
-                fontSize: '20px',
-                fontWeight: '600',
-                color: 'rgba(255, 255, 255, 0.9)',
-                textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)'
-              }}>
-                🎛️ Sandbox Mode
-              </h2>
-              <p style={{
-                margin: '0',
-                fontSize: '14px',
-                color: 'rgba(255, 255, 255, 0.7)',
-                lineHeight: '1.4'
-              }}>
-                Experiment with lava lamp parameters
-              </p>
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <h3 style={{
-                margin: '0 0 16px 0',
-                fontSize: '16px',
-                fontWeight: '500',
-                color: 'rgba(255, 255, 255, 0.8)',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-                paddingBottom: '8px'
-              }}>
-                🌊 Lava Lamp Controls
-              </h3>
-              <ControlPanel
-                params={adjustableParams}
-                responsiveScale={responsiveScale}
-                onParamChange={(param, value) => {
-                  setAdjustableParams(prev => ({ ...prev, [param]: value }));
-                }}
-                embedded={true}
-              />
-            </div>
-
-            <div>
-              <h3 style={{
-                margin: '0 0 16px 0',
-                fontSize: '16px',
-                fontWeight: '500',
-                color: 'rgba(255, 255, 255, 0.8)',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-                paddingBottom: '8px'
-              }}>
-                🎨 Color Themes
-              </h3>
-              <p style={{
-                margin: '0',
-                fontSize: '14px',
-                color: 'rgba(255, 255, 255, 0.6)',
-                fontStyle: 'italic',
-                textAlign: 'center',
-                padding: '20px'
-              }}>
-                Color themes are controlled globally
-              </p>
-            </div>
-          </div>
+        {/* The organism and its content share one selection state. */}
+        {currentSection !== 3 && phase !== 'lava' && phase !== 'lavaHold' && (
+          <EntityDisplay
+            transfer={entityTransfer}
+            key={currentSection}
+            section={currentSection}
+            phase={phase}
+            opacity={entityTransfer.current.opacity ?? 0}
+            onInteract={(chapter) => {
+              entityTransfer.current.startedAt = -Infinity;
+              entityTransfer.current.ejectionBalls = null;
+              entityChapter.current = chapter;
+              entityImpulse.current = 1;
+            }}
+            onOpenProject={() => {
+              if (phaseRef.current !== 'rect') return;
+              entityTransfer.current.startedAt = -Infinity;
+              entityTransfer.current.ejectionBalls = null;
+              entityChapter.current = 0;
+              entityImpulse.current = 1;
+              setCurrentSection(0);
+            }}
+            onPointer={(x, y) => { entityPointer.current = { x, y }; }}
+            onBack={() => {
+              if (phaseRef.current !== 'rect') return;
+              entityPointer.current = { x: 0, y: 0 };
+              setPhaseBoth('toLava');
+              setMenuHidden(false);
+              setMenuClicked(false);
+              wheelLockedRef.current = true;
+              lastWheelActionRef.current = Date.now();
+            }}
+          />
         )}
 
-        {/* Debug info */}
-        <div style={{
-          position: 'fixed',
-          top: '10px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,0.8)',
-          color: 'white',
-          padding: '10px',
-          borderRadius: '5px',
-          fontSize: '12px',
-          zIndex: 20000,
-          fontFamily: 'monospace'
-        }}>
-          Phase: {phase} | Section: {currentSection} | Sandbox: {String(sandboxMode)} | MenuClicked: {String(menuClicked)}
-        </div>
+        {sandboxMode && currentSection === 3 && (
+          <LabPanel
+            params={adjustableParams}
+            onChange={(param, value) => setAdjustableParams(prev => ({ ...prev, [param]: value }))}
+            onPreset={setAdjustableParams}
+            onBack={handleSandboxBackClick}
+          />
+        )}
+
       </Html>
     </group>
   );

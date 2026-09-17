@@ -10,6 +10,25 @@
   z-index: 0;
 }
 
+.blob-slice-trail {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 13000;
+}
+
+.lava-lamp-container canvas, .entity-touch {
+  touch-action: none;
+}
+
+body.is-blob-slicing, body.is-blob-slicing * {
+  cursor: crosshair !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
 /* Navigation Menu Transition Classes */
 .menu-visible {
   opacity: 1;
