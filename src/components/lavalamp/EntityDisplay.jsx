@@ -139,6 +139,16 @@ function ProjectContent({ item, chapter, headingRef }) {
   </div>;
 }
 
+function SeenaRole({ role, onOpenProject }) {
+  return <article className="seena-role">
+    <div className="seena-role__heading"><h2>{role.organization}</h2><span>{role.period}</span></div>
+    <p className="seena-role__title">{role.title}</p>
+    <p className="seena-role__body">{role.body}</p>
+    {role.href && <a className="entity-link seena-role__link" href={role.href} target="_blank" rel="noreferrer">{role.linkLabel}<span aria-hidden="true">↗</span></a>}
+    {role.project && <button type="button" className="entity-link seena-role__link" onClick={onOpenProject}>View document platform project<span aria-hidden="true">↗</span></button>}
+  </article>;
+}
+
 function SeenaProfile({ data, headingRef, onOpenProject, phase, transfer }) {
   const [panel, setPanel] = useState('Intro');
   const panels = ['Intro', ...data.experience.map((role) => role.organization === 'River City Foundry' ? 'Foundry' : role.organization), 'Capabilities', 'Education'];
@@ -152,15 +162,19 @@ function SeenaProfile({ data, headingRef, onOpenProject, phase, transfer }) {
         <h1 ref={headingRef} tabIndex={-1}>{data.title}</h1>
         <div className="seena-profile__panel" aria-live="polite">
           {panel === 'Intro' && <p className="seena-profile__intro">{data.intro}</p>}
-          {role && <article className="seena-role">
-            <div className="seena-role__heading"><h2>{role.organization}</h2><span>{role.period}</span></div>
-            <p className="seena-role__title">{role.title}</p>
-            <p className="seena-role__body">{role.body}</p>
-            {role.href && <a className="entity-link seena-role__link" href={role.href} target="_blank" rel="noreferrer">{role.linkLabel}<span aria-hidden="true">↗</span></a>}
-            {role.project && <button type="button" className="entity-link seena-role__link" onClick={onOpenProject}>View document platform project<span aria-hidden="true">↗</span></button>}
-          </article>}
+          {role && <SeenaRole role={role} onOpenProject={onOpenProject} />}
           {panel === 'Capabilities' && <section className="seena-profile__section"><h2>Capabilities</h2><p>{data.capabilities}</p></section>}
           {panel === 'Education' && <section className="seena-profile__section"><h2>Education</h2><p>{data.education}</p></section>}
+        </div>
+        <div className="seena-profile__desktop">
+          <p className="seena-profile__intro">{data.intro}</p>
+          <div className="seena-profile__roles">
+            {data.experience.map((experience) => <SeenaRole key={experience.organization} role={experience} onOpenProject={onOpenProject} />)}
+          </div>
+          <div className="seena-profile__facts">
+            <section className="seena-profile__section"><h2>Capabilities</h2><p>{data.capabilities}</p></section>
+            <section className="seena-profile__section"><h2>Education</h2><p>{data.education}</p></section>
+          </div>
         </div>
       </div>
       <Suspense fallback={<figure className="seena-portrait" aria-label="Loading portrait" aria-busy="true" />}>
