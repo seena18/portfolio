@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as THREE from 'three';
@@ -131,14 +131,28 @@ function PortraitScene({ onReady, onError, rotating, phase, transfer }) {
 export default function SeenaPortrait3D({ phase, transfer }) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const figureRef = useRef(null);
+  const [displayHeight, setDisplayHeight] = useState(156);
   const rotating = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const compact = window.matchMedia('(max-width: 1100px)').matches;
+  useLayoutEffect(() => {
+    if (!compact || !figureRef.current) return;
+    const figure = figureRef.current;
+    const measure = () => setDisplayHeight(Math.max(1, figure.clientHeight));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(figure);
+    return () => observer.disconnect();
+  }, [compact]);
+  // Render the small bust at one resolution, then let the browser scale it as
+  // the layout changes—like an animated asset, but still live and rotating.
+  const portraitDpr = compact ? Math.min(2, Math.max(0.5, 156 / displayHeight)) : [1, 1.5];
   const onReady = useCallback(() => setReady(true), []);
   const onError = useCallback(() => setFailed(true), []);
 
-  return <figure className={`seena-portrait${ready ? ' is-ready' : ''}`} aria-label="Rotating outline portrait of Seena Abed" aria-busy={!ready && !failed}>
+  return <figure ref={figureRef} className={`seena-portrait${ready ? ' is-ready' : ''}`} aria-label="Rotating outline portrait of Seena Abed" aria-busy={!ready && !failed}>
     {!failed && <Canvas camera={{ position: [0, 0, 2], fov: 37, near: 0.01, far: 20 }}
-      dpr={compact ? [2, 2.5] : [1, 1.5]} frameloop={rotating ? 'always' : 'demand'} gl={{ antialias: true, alpha: true }}>
+      dpr={portraitDpr} frameloop={rotating ? 'always' : 'demand'} gl={{ antialias: true, alpha: true }}>
       <ambientLight intensity={1.6} />
       <hemisphereLight args={['#ffffff', '#888888', 1.5]} />
       <directionalLight position={[-2, 3, 4]} intensity={2} />
