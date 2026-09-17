@@ -778,9 +778,9 @@
 
 @media (max-width: 650px) {
   .entity-experience--about .entity-story { width: calc(100% - 32px); }
-  .seena-profile__hero { grid-template-columns: minmax(0, 1fr) 94px; gap: 0 8px; }
+  .seena-profile__hero { grid-template-columns: minmax(0, 1fr) 50%; gap: 0 8px; }
   .entity-experience--about .entity-story h1 { font-size: clamp(32px, 8vw, 42px); }
   .seena-profile__hero .seena-profile__intro { margin-top: 12px; font-size: 15px; line-height: 1.45; }
-  .seena-portrait { height: 122px; }
+  .seena-portrait { height: min(52vw, 210px); }
   .seena-profile__body { margin-top: 34px; }
 }
