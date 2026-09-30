@@ -63,6 +63,7 @@ function compileShader(gl, type, source) {
 }
 
 export default function MothermoldAssembly({ fallback, label }) {
+  const assemblyRef = useRef(null);
   const canvasRef = useRef(null);
   const [failed, setFailed] = useState(false);
 
@@ -148,6 +149,7 @@ export default function MothermoldAssembly({ fallback, label }) {
 
       let elapsed = 0;
       let previousTime = performance.now();
+      let presentationState = '';
       canvas.classList.add('is-ready');
 
       const draw = now => {
@@ -157,6 +159,11 @@ export default function MothermoldAssembly({ fallback, label }) {
         if (!document.hidden && !reducedMotion.matches) elapsed += delta;
 
         const eased = reducedMotion.matches ? 42 / 62 : smoothstep(sequenceProgress(elapsed));
+        const nextPresentationState = eased < .08 ? 'ASSEMBLED' : eased > .82 ? 'EXPLODED' : 'INSPECTION';
+        if (nextPresentationState !== presentationState) {
+          presentationState = nextPresentationState;
+          assemblyRef.current?.setAttribute('data-state', presentationState);
+        }
         const explode = 62 * eased;
         const yaw = .65 + Math.PI / 2 + Math.PI * eased;
         const pitch = .58;
@@ -184,11 +191,11 @@ export default function MothermoldAssembly({ fallback, label }) {
           0, 0, 2 * far * near / (near - far), 0,
         ]));
         const narrow = canvas.clientWidth < 600;
-        const startZoom = narrow ? 1.48 : 1.35;
-        const endZoom = narrow ? .84 : .90;
-        const widestAnglePullback = (narrow ? .20 : .24) * Math.sin(Math.PI * eased);
+        const startZoom = narrow ? 2.05 : 2.2;
+        const endZoom = narrow ? 1.22 : 1.38;
+        const widestAnglePullback = (narrow ? .28 : .34) * Math.sin(Math.PI * eased);
         gl.uniform3fv(locations.center, center);
-        gl.uniform2f(locations.frameOffset, narrow ? 0 : -.07, -.055);
+        gl.uniform2f(locations.frameOffset, 0, -.035);
         gl.uniform1f(locations.zoom, startZoom + (endZoom - startZoom) * eased - widestAnglePullback);
         gl.uniform1f(locations.distance, cameraDistance);
         gl.uniform2f(locations.turn, yaw, pitch);
@@ -221,7 +228,7 @@ export default function MothermoldAssembly({ fallback, label }) {
     };
   }, []);
 
-  return <div className={`mothermold-assembly${failed ? ' is-failed' : ''}`}>
+  return <div ref={assemblyRef} className={`mothermold-assembly${failed ? ' is-failed' : ''}`} data-state="ASSEMBLED">
     {failed && <img src={fallback} alt={label} decoding="async" />}
     <canvas ref={canvasRef} hidden={failed} role="img" aria-label={label} />
   </div>;

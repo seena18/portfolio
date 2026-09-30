@@ -1,0 +1,39 @@
+/* A compact profile with a shared right edge for portrait and experience. */
+.entity-experience--about .entity-story { width: min(880px, calc(100% - 64px)); max-width: none; height: 100dvh; min-height: 100dvh; margin: 0 auto; padding: 0; }
+.entity-experience--about .profile-sheet { display: flex; flex-direction: column; justify-content: center; gap: 24px; flex: 1; min-width: 0; transform: translateY(clamp(-32px, -2.5vh, -16px)); }
+.profile-sheet__hero { display: grid; grid-template-columns: minmax(0, min(60%, 48ch)) minmax(0, 1fr); align-items: center; gap: 0; font-size: 16px; }
+.profile-sheet__opening { min-width: 0; }
+.entity-experience--about .profile-sheet h1 { font-size: clamp(34px, 4vw, 50px); font-weight: 500; letter-spacing: -.06em; line-height: 1.05; margin: 0; }
+.profile-sheet__intro { max-width: 48ch; margin: 16px 0 0; color: #656560; font-size: 16px; line-height: 1.55; text-wrap: pretty; }
+/* The square canvas stays centered in the entire space to the right of copy.
+   Symmetric internal framing provides equal visible shoulder clearances. */
+.profile-sheet .seena-portrait { grid-column: 2; grid-row: 1; width: min(100%, 210px); height: auto; max-height: none; aspect-ratio: 1; transform: none; margin: 0; align-self: center; justify-self: center; }
+.profile-sheet__roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; border-top: 1px solid #deded8; padding-top: 20px; }
+.profile-role { display: flex; flex-direction: column; min-width: 0; padding: 0; }
+.profile-role::before { display: none; }
+.profile-role h2 { margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.045em; line-height: 1.2; }
+.profile-role__identity p { margin: 8px 0 5px; font-size: 14px; line-height: 1.45; }
+.profile-role__identity > span { color: #777; font-size: 12px; }
+.profile-role__detail { display: flex; flex-direction: column; flex: 1; }
+.profile-role__detail > p { margin: 12px 0 10px; color: #656560; font-size: 16px; line-height: 1.5; text-wrap: pretty; }
+.profile-sheet .profile-role__link { display: flex; justify-content: space-between; align-items: center; gap: 16px; width: 100%; min-height: 44px; margin: auto 0 0; padding: 8px 0; border: 0; border-bottom: 1px solid #d7d7d3; background: none; color: #222; font: inherit; font-size: 14px; text-align: left; text-decoration: none; cursor: pointer; }
+.profile-role__link:hover { text-decoration: underline; text-underline-offset: 5px; }
+.profile-role__link:focus-visible { outline: 2px solid #222; outline-offset: 4px; }
+.profile-sheet__facts { display: grid; grid-template-columns: 1.4fr 1fr; gap: 32px; margin: 0; padding-top: 18px; border-top: 1px solid #deded8; }
+.profile-sheet__facts h2 { margin: 0 0 9px; color: #777; font-size: 12px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
+.profile-sheet__facts p { margin: 0; color: #656560; font-size: 14px; line-height: 1.5; text-wrap: pretty; }
+@media (max-width: 1100px) {
+  .entity-experience--about .entity-story { height: auto; min-height: calc(100dvh - 64px); padding: 0 0 40px; }
+  .entity-experience--about .profile-sheet { transform: none; }
+}
+@media (max-width: 650px) {
+  .entity-experience--about .entity-story { width: calc(100% - 40px); padding-top: 16px; }
+  .entity-experience--about .profile-sheet { justify-content: flex-start; }
+  .profile-sheet__hero { grid-template-columns: 1fr 1fr; row-gap: 12px; }
+  .profile-sheet__opening { display: contents; }
+  .entity-experience--about .profile-sheet h1 { grid-column: 1; grid-row: 1; font-size: clamp(30px, 7vw, 40px); }
+  .profile-sheet__intro { grid-column: 1 / -1; grid-row: 2; margin: 0; }
+  .profile-sheet .seena-portrait { width: min(100%, 170px); }
+  .profile-sheet__roles { grid-template-columns: 1fr; gap: 26px; }
+  .profile-sheet__facts { grid-template-columns: 1fr; gap: 22px; }
+}

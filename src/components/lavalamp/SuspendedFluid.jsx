@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
 import { createLavaLampMaterial } from './lavaMaterial';
-import { FLUID_REMNANTS, fluidDensity, fluidPresence, motePosition, remnantPosition } from './fluidResidueMotion';
+import { FLUID_REMNANTS, fluidDensity, fluidPresence, keepRemnantOnScreen, motePosition, remnantPosition } from './fluidResidueMotion';
 
 export default function SuspendedFluid({ phase, transfer, reducedMotion, paused, baseColor, highlightColor }) {
   const { camera, gl, size } = useThree();
@@ -40,11 +40,11 @@ export default function SuspendedFluid({ phase, transfer, reducedMotion, paused,
     const material = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, depthTest: false,
       uniforms: {
-        uTime: { value: 0 }, uPresence: { value: 0 }, uDpr: { value: 1 },
+        uTime: { value: 0 }, uPresence: { value: 0 }, uDpr: { value: 1 }, uMobile: { value: 0 },
         uSize: { value: new THREE.Vector2() }, uPointer: { value: new THREE.Vector2(-2, -2) },
       },
       vertexShader: `
-        uniform float uTime, uPresence, uDpr;
+        uniform float uTime, uPresence, uDpr, uMobile;
         uniform vec2 uSize, uPointer;
         varying float vAlpha;
         void main() {
@@ -62,8 +62,8 @@ export default function SuspendedFluid({ phase, transfer, reducedMotion, paused,
           // The reading column stays quieter than the margins; these are
           // individual points, not more of the large liquid remnants.
           float margin = smoothstep(.16, .36, abs(p.x - .5));
-          vAlpha = uPresence * mix(.18, .46, margin) * (.75 + depth * .25);
-          gl_PointSize = mix(1.4, 3.2, depth) * uDpr;
+          vAlpha = uPresence * mix(.18 + uMobile * .10, .46 + uMobile * .16, margin) * (.75 + depth * .25);
+          gl_PointSize = (mix(1.4, 3.2, depth) + uMobile * .35) * uDpr;
           gl_Position = vec4(p.x * 2. - 1., 1. - p.y * 2., 0., 1.);
         }
       `,
@@ -134,15 +134,26 @@ export default function SuspendedFluid({ phase, transfer, reducedMotion, paused,
       if (!mesh.visible) continue;
       const config = FLUID_REMNANTS[i];
       const p = remnantPosition(config, time, size.width, size.height, transfer.current.contentBounds);
-      const x = THREE.MathUtils.lerp(sourceX, p.x, spread);
+      const bounds = transfer.current.contentBounds;
+      const gutter = bounds && size.width >= 768
+        ? (config.x < .5 ? bounds.left : size.width - bounds.right)
+        : Infinity;
+      const mobileRadiusCap = 20 + Math.min(7, Math.max(0, size.width - 600) * .047);
+      const gutterBlend = THREE.MathUtils.smoothstep(size.width, 767, 900);
+      const responsiveCap = size.width < 768
+        ? density.radiusCap
+        : THREE.MathUtils.lerp(mobileRadiusCap, Number.isFinite(gutter) ? Math.max(20, gutter * .42) : config.radius, gutterBlend);
+      const radius = Math.min(config.radius, size.width * .043, responsiveCap);
+      const targetX = size.width >= 650 ? keepRemnantOnScreen(p.x, radius, size.width) : p.x;
+      const x = THREE.MathUtils.lerp(sourceX, targetX, spread);
       const y = THREE.MathUtils.lerp(sourceY, p.y, spread);
       mesh.position.set(x / size.width * 2 - 1, 1 - y / size.height * 2, depth).unproject(camera);
-      const radius = Math.min(config.radius, size.width * .043, density.radiusCap);
       origin.set((x + radius) / size.width * 2 - 1, 1 - y / size.height * 2, depth).unproject(camera);
       mesh.scale.setScalar(origin.distanceTo(mesh.position) * 2.7 * (.45 + .55 * presence));
       mesh.quaternion.copy(camera.quaternion);
       mesh.rotateY(time * .12 + config.seed);
       mesh.rotateZ(Math.sin(time * .21 + config.seed) * .14);
+      // Narrow gutters call for smaller lobes, not disappearing lobes.
       mesh.material.uniforms.uOpacity.value = presence * density.opacity;
       mesh.material.uniforms.uLiquidHead.value.copy(mesh.position);
       mesh.reset();
@@ -158,6 +169,7 @@ export default function SuspendedFluid({ phase, transfer, reducedMotion, paused,
     uniforms.uTime.value = time;
     uniforms.uPresence.value = reducedMotion ? 0 : presence;
     uniforms.uDpr.value = gl.getPixelRatio();
+    uniforms.uMobile.value = 1 - THREE.MathUtils.smoothstep(size.width, 700, 900);
     uniforms.uSize.value.set(size.width, size.height);
     uniforms.uPointer.value.copy(smoothPointer.current);
   }, -.5);

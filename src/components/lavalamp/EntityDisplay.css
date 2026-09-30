@@ -84,7 +84,28 @@
 .project-visual--dashboard:hover img { filter: grayscale(0) contrast(1); }
 .project-visual--sequence { overflow: visible; background: transparent; border: 0; }
 .project-visual--sequence::after { display: none; }
-.mothermold-assembly { position: absolute; inset: 0; background: transparent; pointer-events: none; }
+.mothermold-assembly { position: absolute; inset: 0; overflow: hidden; background: #f3f3ef; pointer-events: none; }
+.mothermold-assembly::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: .42;
+  background-image:
+    linear-gradient(rgb(17 17 17 / .08) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(17 17 17 / .08) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.mothermold-assembly::after {
+  content: 'ASSEMBLY / ' attr(data-state);
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  padding: 5px 7px;
+  background: #111;
+  color: #fff;
+  font: 10px/1.2 monospace;
+  letter-spacing: .08em;
+}
 .mothermold-assembly canvas { width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 280ms ease; }
 .mothermold-assembly canvas.is-ready { opacity: 1; }
 .mothermold-assembly.is-failed canvas { display: none; }
@@ -623,7 +644,7 @@
   .entity-chapter-mobile { display: flex; align-items: center; justify-content: space-between; flex: none; height: 40px; margin-bottom: 10px; border-bottom: 1px solid #d7d7d3; }
   .entity-chapter-mobile button { width: 40px; height: 38px; border: 0; background: none; font-size: 19px; }
   .entity-chapter-mobile span { color: #777; font-size: 11px; letter-spacing: .06em; }
-  .entity-chapter-mobile strong { margin-left: 12px; color: #171717; font-size: 12px; letter-spacing: 0; }
+.entity-chapter-mobile strong { margin-left: 0; color: #171717; font-size: 12px; letter-spacing: 0; }
   .project-content { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; }
   .entity-experience--projects .project-heading { display: block; margin: 0 0 9px; }
   .entity-experience--projects .project-heading h1 { font-size: clamp(30px, 5.5vh, 48px); }
@@ -820,6 +841,59 @@
   .seena-profile__hero { grid-template-columns: minmax(0, 1fr) 50%; gap: 0 8px; }
   .entity-experience--about .entity-story h1 { font-size: clamp(32px, 8vw, 42px); }
   .seena-profile__hero .seena-profile__intro { margin-top: 12px; font-size: 15px; line-height: 1.45; }
-  .seena-portrait { height: min(52vw, 210px); transform: translateX(-12px); }
+  .seena-portrait { height: min(52vw, 210px); transform: none; }
   .seena-profile__body { margin-top: 34px; }
+}
+
+/* Intrinsic profile layout: center when it fits, scroll when it does not.
+   The portrait owns the right 40% of the hero, without viewport-specific offsets. */
+.entity-experience--about { overflow-y: auto; overflow-x: hidden; }
+.entity-experience--about .entity-story {
+  height: auto;
+  min-height: calc(100dvh - 112px);
+  padding-bottom: max(32px, env(safe-area-inset-bottom));
+}
+.seena-profile { flex: 1; display: flex; justify-content: center; }
+.seena-profile__hero {
+  flex: none;
+  width: 100%;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  column-gap: 0;
+}
+.seena-portrait {
+  width: min(100%, 240px);
+  justify-self: center;
+  transform: none;
+}
+.seena-profile__roles .seena-role { min-width: 0; display: flex; flex-direction: column; }
+.seena-profile__roles .seena-role__link { margin-top: auto; padding-top: 12px; min-height: 44px; }
+.seena-profile__roles .seena-role__body { margin-bottom: 12px; }
+.seena-profile__facts .seena-profile__section { min-width: 0; }
+
+@media (min-width: 651px) and (max-width: 959px) {
+  .entity-experience--about .entity-story { width: min(700px, calc(100% - 64px)); }
+  .seena-profile__roles { display: block; padding: 0; border: 0; }
+  .seena-profile__roles .seena-role { padding: 20px 0 24px; border-top: 1px solid #d7d7d3; }
+  .seena-profile__roles .seena-role__body { font-size: 16px; line-height: 1.55; }
+  .seena-profile__roles .seena-role__link { width: 100%; max-width: none; }
+  .seena-profile__facts { display: grid; grid-template-columns: 1.3fr .7fr; gap: 24px; border-top: 1px solid #d7d7d3; }
+  .seena-profile__facts .seena-profile__section { border: 0; padding: 18px 0 0; }
+  .seena-profile__facts .seena-profile__section > p { font-size: 14px; line-height: 1.55; }
+}
+@media (max-width: 650px) {
+  .entity-experience--about .entity-story { min-height: calc(100dvh - 84px); }
+  .seena-profile { display: block; }
+  .seena-profile__hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* Keep the short name beside the portrait, not the whole paragraph in a
+     narrow half-column. The introduction gets its own quiet, full-width row. */
+  .seena-profile__opening { display: contents; }
+  .seena-profile__opening > h1 { grid-column: 1; grid-row: 1; align-self: center; padding-right: 12px; }
+  .seena-profile__hero .seena-profile__intro { grid-column: 1 / -1; grid-row: 2; margin: 16px 0 0; max-width: 48ch; font-size: 16px; line-height: 1.55; }
+  .seena-profile__body { grid-row: 3; margin-top: 28px; }
+  .seena-portrait { height: clamp(140px, 44vw, 190px); }
+  .seena-profile__roles .seena-role__link { width: 100%; max-width: none; }
+}
+@media (max-width: 360px) {
+  .entity-experience--about .entity-story h1 { font-size: 28px; }
+  .seena-profile__hero .seena-profile__intro { font-size: 14px; }
 }

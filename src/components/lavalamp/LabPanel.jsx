@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import './LabPanel.css';
+import './TerminalSurface.css';
 
 const PRESETS = [
   {
@@ -39,10 +40,10 @@ export default function LabPanel({ params, onChange, onPreset, onBack }) {
     Object.keys(values).every(key => params[key] === values[key]))?.name;
 
   return createPortal(
-    <div className="lab-ui">
+    <div className="lab-ui terminal-surface">
       <header className="lab-ui__masthead">
-        <button type="button" className="lab-ui__back" onClick={onBack}>← Menu</button>
-        <span className="lab-ui__index">SEENA / LAB</span>
+        <button type="button" className="lab-ui__back" onClick={onBack}>↖ Menu</button>
+        <span className="terminal-location"><span aria-hidden="true">/</span> Lab</span>
       </header>
 
       <aside className={`lab-ui__dock${open ? ' lab-ui__dock--open' : ''}`} aria-label="Lava lamp controls">
@@ -52,8 +53,7 @@ export default function LabPanel({ params, onChange, onPreset, onBack }) {
         </button>
         <div className="lab-ui__contents" id="lab-ui-controls">
           <div className="lab-ui__intro">
-            <span className="lab-ui__eyebrow">A LIVE EXPERIMENT</span>
-            <h1>Make it move.</h1>
+            <h1>Material controls</h1>
             <p>Drag through the blob to slice it. Change the material as it reforms.</p>
           </div>
 

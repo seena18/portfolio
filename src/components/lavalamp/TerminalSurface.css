@@ -1,0 +1,187 @@
+/* Shared vocabulary from the main menu: quiet labels, hard selections,
+   open white space, and the fluid scene supplying the movement. */
+.terminal-surface {
+  --terminal-ink: #111;
+  --terminal-muted: #626262;
+  --terminal-rule: rgb(17 17 17 / .16);
+  --terminal-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  color: var(--terminal-ink);
+}
+.terminal-surface .entity-header,
+.terminal-surface .lab-ui__masthead {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+}
+.terminal-surface .entity-back,
+.terminal-surface .lab-ui__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--terminal-ink);
+  font-size: 13px !important;
+  font-weight: 520 !important;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+.terminal-surface .entity-back span { margin: 0; }
+.terminal-location {
+  display: inline-flex;
+  gap: 16px;
+  color: var(--terminal-muted);
+  font: 12px/1.4 var(--terminal-mono);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.terminal-surface .entity-back:hover,
+.terminal-surface .entity-back:focus-visible,
+.terminal-surface .lab-ui__back:hover,
+.terminal-surface .lab-ui__back:focus-visible { background: #111; color: #fff; opacity: 1; }
+.terminal-surface .entity-story h1,
+.terminal-surface.entity-experience--about .profile-sheet h1,
+.terminal-surface .lab-ui__intro h1 {
+  font: 520 clamp(22px, 2.2vw, 30px)/1.2 Inter, 'Helvetica Neue', Arial, sans-serif;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+.terminal-surface .entity-chapters { justify-content: flex-start; gap: 4px; }
+.terminal-surface .entity-chapters button,
+.terminal-surface .project-view-switch button,
+.terminal-surface .mesh-mobile__steps button,
+.terminal-surface .lab-ui__group-tabs button,
+.terminal-surface .lab-ui__presets button {
+  padding: 10px 12px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--terminal-muted);
+  font-size: 12px;
+  font-weight: 520;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+  transition: color 160ms, background-color 160ms;
+}
+.terminal-surface .entity-chapters button:hover,
+.terminal-surface .entity-chapters button[aria-pressed='true'],
+.terminal-surface .project-view-switch button:hover,
+.terminal-surface .project-view-switch button[aria-pressed='true'],
+.terminal-surface .mesh-mobile__steps button[aria-pressed='true'],
+.terminal-surface .lab-ui__group-tabs button[aria-pressed='true'],
+.terminal-surface .lab-ui__presets button:hover,
+.terminal-surface .lab-ui__presets button[aria-pressed='true'] { background: #111; color: #fff; }
+.terminal-surface .entity-chapters button::before { display: none; }
+.terminal-surface .project-heading { align-items: center; }
+.terminal-surface .project-heading .project-spec {
+  font-family: var(--terminal-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--terminal-muted);
+}
+.terminal-surface .project-summary > h2 {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -.015em;
+  white-space: normal;
+}
+.terminal-surface .project-overview { border-top-color: var(--terminal-rule); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.terminal-surface .entity-detail { border-top-color: var(--terminal-rule); }
+.terminal-surface .entity-detail h2 { font-size: 15px; line-height: 1.5; font-weight: 500; }
+.terminal-surface .entity-intro,
+.terminal-surface .entity-detail p { color: var(--terminal-muted); font-size: 15px; line-height: 1.6; }
+.terminal-surface .entity-tags { font: 11px/1.6 var(--terminal-mono); color: var(--terminal-muted); }
+.terminal-surface .entity-link,
+.terminal-surface .profile-role__link {
+  font-size: 12px;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+  min-height: 44px;
+  border-bottom-color: var(--terminal-rule);
+}
+.terminal-surface .entity-link:hover,
+.terminal-surface .profile-role__link:hover { color: #111; border-bottom-color: #111; text-decoration: none; }
+.terminal-surface .project-evidence strong { font: 500 20px/1.3 var(--terminal-mono); letter-spacing: -.035em; }
+.terminal-surface .project-evidence span { color: var(--terminal-muted); font-size: 11px; }
+.terminal-surface .project-visual { border: 0; background: transparent; }
+.terminal-surface .project-visual--pipeline { background: #171717; }
+.terminal-surface .project-diagram { color: #111; }
+.terminal-surface .project-diagram__title { border-bottom: 0; }
+.terminal-surface .project-diagram__title strong { font-size: 20px; letter-spacing: 0; }
+.terminal-surface .project-diagram__title span,
+.terminal-surface .project-diagram__caption { color: var(--terminal-muted); }
+.terminal-surface .project-diagram__caption { border-top: 0; }
+.terminal-surface .project-diagram__node { border: 0; background: #111; color: white; }
+.terminal-surface .project-diagram__node span { color: #aaa; }
+.terminal-surface .project-visual::after { display: none; }
+.terminal-surface .project-visual img { transition: none; }
+.terminal-surface .project-visual:hover img { transform: none; }
+.terminal-surface .profile-sheet__intro { font-size: 15px; line-height: 1.6; color: var(--terminal-muted); }
+.terminal-surface .profile-sheet__hero { font-size: 15px; }
+.terminal-surface .profile-role h2 { font-size: 16px; font-weight: 520; letter-spacing: .025em; text-transform: uppercase; line-height: 1.4; }
+.terminal-surface .profile-role__identity p { font-size: 13px; line-height: 1.5; }
+.terminal-surface .profile-role__identity > span { font: 11px/1.5 var(--terminal-mono); color: var(--terminal-muted); }
+.terminal-surface .profile-role__detail > p { font-size: 15px; line-height: 1.6; color: var(--terminal-muted); }
+.terminal-surface .profile-sheet__facts h2 { font: 11px/1.5 var(--terminal-mono); letter-spacing: .07em; }
+.terminal-surface .profile-sheet__facts p { font-size: 13px; line-height: 1.6; color: var(--terminal-muted); }
+.terminal-surface.entity-experience--contact .entity-story { width: min(640px, calc(100% - 48px)); }
+.terminal-surface.entity-experience--contact .entity-intro { margin: 20px 0 32px; max-width: 52ch; }
+.terminal-surface .contact-destinations { display: grid; grid-template-columns: 1fr; gap: 2px; }
+.terminal-surface .contact-destinations a {
+  min-height: 56px;
+  padding: 14px 12px;
+  border: 0;
+  font-size: 15px;
+  font-weight: 520;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+.terminal-surface .contact-destinations a:hover,
+.terminal-surface .contact-destinations a:focus-visible { background: #111; color: #fff; }
+.terminal-surface .contact-destinations a:hover > span:last-child { transform: none; }
+.terminal-surface .lab-ui__intro h1 { margin-top: 0; font-size: 20px; }
+.terminal-surface .lab-ui__intro p { font-size: 14px; max-width: 32ch; }
+.terminal-surface .lab-ui__presets { gap: 2px; }
+.terminal-surface .lab-ui__group-tabs { gap: 2px; border: 0; }
+.terminal-surface .lab-ui__group h2 { display: none; }
+.terminal-surface .lab-ui__control-heading { font-size: 13px; }
+.terminal-surface .lab-ui__control-heading output { font: 12px/1.5 var(--terminal-mono); }
+.terminal-surface .lab-ui__footer { border-color: var(--terminal-rule); }
+.terminal-surface .lab-ui__footer button { text-transform: uppercase; letter-spacing: .045em; min-height: 44px; }
+.terminal-surface .lab-ui__control input[type='range']::-webkit-slider-thumb { border-radius: 0; width: 8px; }
+.terminal-surface .lab-ui__control input[type='range']::-moz-range-thumb { border-radius: 0; width: 8px; }
+@media (min-width: 1101px) {
+  .terminal-surface.entity-experience--about .entity-story { height: auto; min-height: 100dvh; padding: 76px 0; }
+  .terminal-surface.entity-experience--about .profile-sheet { flex: 1 0 auto; transform: none; }
+}
+@media (max-width: 1100px) {
+  .terminal-surface .project-view-switch { gap: 2px; border: 0; }
+  .terminal-surface .project-overview { overflow-y: auto; overscroll-behavior: contain; }
+  .terminal-surface .entity-chapter-mobile { border: 0; }
+  .terminal-surface .entity-chapter-mobile strong { padding: 5px 8px; background: #111; color: #fff; text-transform: uppercase; font-weight: 520; letter-spacing: .035em; }
+  .terminal-surface .entity-chapter-mobile > span { font-family: var(--terminal-mono); }
+}
+@media (max-width: 650px) {
+  .terminal-surface .entity-story h1,
+  .terminal-surface.entity-experience--about .profile-sheet h1 { font-size: 22px; }
+  .terminal-surface .mesh-mobile__steps button { padding-inline: 6px; font-size: 11px; }
+  .terminal-surface .entity-header { gap: 10px; }
+  .terminal-surface .terminal-location { font-size: 11px; gap: 10px; }
+  .terminal-surface .profile-sheet__intro { font-size: 15px; }
+  .terminal-surface .lab-ui__presets button { padding-inline: 8px; }
+  .terminal-surface .lab-ui__contents { overflow-y: auto; max-height: calc(100dvh - 132px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal-surface button, .terminal-surface a { transition: none; }
+}
+@media (max-height: 600px) {
+  .terminal-surface.entity-experience--contact { overflow-y: auto; }
+  .terminal-surface.entity-experience--contact .entity-story { height: auto; min-height: calc(100dvh - 100px); padding-bottom: 24px; }
+}

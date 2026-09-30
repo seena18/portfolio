@@ -5,9 +5,9 @@ const KEY = 'portfolio-layout-draft-v1';
 const GRID = 8;
 const TARGETS = [
   { label: 'Main menu', selector: '.symbiote-nav' },
-  { label: 'Seena intro', selector: '.seena-profile__opening' },
+  { label: 'Seena intro', selector: '.profile-sheet__opening' },
   { label: 'Seena bust', selector: '.seena-portrait' },
-  { label: 'Seena experience', selector: '.seena-profile__body' },
+  { label: 'Seena experience', selector: '.profile-sheet__body' },
   { label: 'Project visual', selector: '.project-visual' },
   { label: 'Project text', selector: '.project-overview' },
 ];

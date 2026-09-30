@@ -233,7 +233,7 @@ const LavaLampModel = ({ baseColor, highlightColor, backgroundColor, portfolioDa
       color: new THREE.Color(0x111111),
       title: "Selected Projects",
       description: "Production systems, complete products, and open-source infrastructure.",
-      items: ["Chevron document platform", "Meshwright", "Field-safety product"],
+      items: ["Chevron document platform", "Meshwright"],
     },
     {
       id: 1,

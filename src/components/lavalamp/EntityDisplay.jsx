@@ -1,6 +1,9 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './EntityDisplay.css';
+import './SeenaProfile.css';
+import './TerminalSurface.css';
+import './ContentDossier.css';
 import { sampleInkTargets, INK_HANDOFF, INK_ROW_DELAY, inkRevealFront } from './inkTargets';
 import MothermoldAssembly from './MothermoldAssembly';
 
@@ -10,24 +13,29 @@ const SeenaPortrait3D = lazy(() => import('./SeenaPortrait3D'));
 function ProjectDiagram({ type, label }) {
   const isEnterprise = type === 'enterprise';
   const nodes = isEnterprise
-    ? ['30+ facilities', 'Angular filing UI', 'FastAPI services', 'SQL + Redis', 'Azure delivery']
-    : ['Field teams', 'React Native', 'Express API', 'PostgreSQL', 'GCP + Docker'];
-  return <div className={`project-diagram project-diagram--${type}`} role="img" aria-label={label}>
-    <div className="project-diagram__rail" aria-hidden="true" />
-    <div className="project-diagram__title">
-      <span>{isEnterprise ? 'Production system / enterprise scale' : 'Functional MVP / field operations'}</span>
+    ? [['Facilities', '30+', 'Global document workflows'], ['Filing interface', 'Angular / TS', 'Capture + retrieval'], ['Services', 'FastAPI', 'Application / API layer'], ['Data', 'SQL / Redis', 'Persistence + cache'], ['Deployment', 'Azure', 'Cloud delivery']]
+    : [['Field teams', '50-person pilot', 'Training + inspections'], ['Mobile client', 'React Native', 'Cross-platform workflows'], ['Services', 'Express', 'Claims-based access + MFA'], ['Data', 'PostgreSQL', 'Migrated from NoSQL'], ['Deployment', 'GCP / Docker', 'Containerized delivery']];
+  return <div className="system-map" role="img" aria-label={label}>
+    <div className="system-map__heading">
+      <span>System architecture / {isEnterprise ? 'enterprise' : 'field operations'}</span>
       <strong>{isEnterprise ? 'Document flow' : 'Safety workflow'}</strong>
     </div>
-    <div className="project-diagram__nodes">
-      {nodes.map((node, index) => <div className="project-diagram__node" key={node}>
-        <span>{String(index + 1).padStart(2, '0')}</span><strong>{node}</strong>
+    <div className="system-map__grid">
+      <svg className="system-map__wires" viewBox="0 0 1200 420" preserveAspectRatio="none" aria-hidden="true">
+        <defs><marker id={`arrow-${type}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L8 4L0 8" fill="currentColor" /></marker></defs>
+        <path d="M350 90H425 M775 90H850 M1000 150V210H600V270" markerEnd={`url(#arrow-${type})`} />
+        <path className="system-map__deploy" d="M1080 270V150" markerEnd={`url(#arrow-${type})`} />
+      </svg>
+      <svg className="system-map__wires system-map__wires--mobile" viewBox="0 0 400 564" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M200 112V144 M200 256V288 M140 400V416H92V432" markerEnd={`url(#arrow-${type})`} />
+        <path className="system-map__deploy" d="M308 432V400" markerEnd={`url(#arrow-${type})`} />
+      </svg>
+      {nodes.map(([name, value, note], index) => <div className={`system-map__node system-map__node--${index}`} key={name}>
+        <span>{String(index + 1).padStart(2, '0')} / {name}</span><strong>{value}</strong><small>{note}</small>
       </div>)}
+      <div className="system-map__legend"><span>→ Request / data</span><span>⇡ Deployment</span></div>
     </div>
-    <div className="project-diagram__caption">
-      <span>{isEnterprise ? 'Paper + legacy workflows' : 'Training · certifications · inspections'}</span>
-      <span aria-hidden="true">→</span>
-      <span>{isEnterprise ? 'Cloud platform' : 'One field application'}</span>
-    </div>
+    <p className="system-map__caption">Reconstructed architecture. No confidential interfaces or data.</p>
   </div>;
 }
 
@@ -90,7 +98,6 @@ function ProjectMedia({ item }) {
     return <video
       className="project-demo-video"
       poster={item.image}
-      autoPlay
       muted
       loop
       playsInline
@@ -105,70 +112,84 @@ function ProjectMedia({ item }) {
   return <img src={item.image} alt={item.imageAlt} decoding="async" />;
 }
 
-function ProjectContent({ item, chapter, headingRef }) {
-  const [view, setView] = useState('visual');
-  return <div className={`project-content${item.proofs ? ' has-evidence' : ''}`} data-view={view}>
-    <div className="project-heading">
+const caseNotes = {
+  Chevron: { subtitle: 'Document platform', role: 'Owned the filing front end and release pipeline. Contributed to FastAPI services and the SQL data layer.', problem: 'Paper and legacy document workflows at global scale. A separate retention process took about 48 hours.', result: 'Supported a platform handling 1M+ documents annually across 30+ facilities. Separately, parallel PowerShell execution moved 1.2M retention records in about three hours.' },
+  Meshwright: { subtitle: 'Text → image → 3D → rig → motion', role: 'Built the orchestration and 3D pipeline: generation, review gates, recovery, validation, and export.', problem: 'Generated assets need more than a convincing preview: interrupted jobs, mesh quality, rigging, and motion all need inspection.', result: 'A checkpointed workflow with persisted recovery and five export formats. The Dust Saint artifact shows the path through corrected idle and walk clips.' },
+  '404Leads': { subtitle: 'Map-first lead intelligence', role: 'Built map-based discovery, verification, durable processing, and the user-isolated lead pipeline.', problem: 'Raw place data does not tell you which businesses lack a credible web presence—or whether the evidence is reliable.', result: 'A streaming workflow that deduplicates businesses, cross-checks identity and web presence, and exposes the evidence behind each lead.' },
+  DaveTrader: { subtitle: 'Explainable market decisions', role: 'Built the market workspace, strategy tooling, and explainable decision-support experience.', problem: 'Signals alone omit the context needed to understand, validate, or invalidate a trading idea.', result: 'A live workspace joining market data, research, backtests, and strategy inspection with an auditable decision trail.' },
+  Mynah: { subtitle: 'Local voice, line by line', role: 'Built the self-hosted voice editor and generation workflow around Chatterbox Turbo.', problem: 'One bad line should not mean regenerating an entire narration or sending voice data to a hosted editor.', result: 'Record or upload a voice, generate independent lines, reroll a take, and export narration. Fingerprinted takes keep unchanged audio reusable.' },
+  Mothermold: { subtitle: 'From STL to silicone tooling', role: 'Built the mold-generation workflow and browser-based geometry inspection tools.', problem: 'Printable tooling requires verified containment, clearances, assembly, and export—not just a plausible shape.', result: 'Inspectable jackets, lids, displacement cores, lugs, and cutaways, with repair, interference checks, and print-package export.' },
+};
+
+function ProjectContent({ item, headingRef }) {
+  const notes = caseNotes[item.label];
+  return <article className={`case-study${item.label === 'Chevron' ? ' case-study--document-flow' : ''}`}>
+    <header className="case-heading">
       <h1 ref={headingRef} tabIndex={-1}>{item.label}</h1>
-      <div className="project-spec"><span>{String(chapter + 1).padStart(2, '0')} / {item.origin}</span><span>{item.kind} · {item.status}</span></div>
-    </div>
-    <div className="project-view-switch" role="group" aria-label="Project view">
-      {['visual', 'story', 'details'].map((option) => <button key={option} type="button" aria-pressed={view === option} onClick={() => setView(option)}>{option}</button>)}
-    </div>
-    <figure className={`project-visual${item.visualStyle ? ` project-visual--${item.visualStyle}` : ''}`} key={item.video || item.image}>
-      <ProjectMedia item={item} />
-    </figure>
-    {item.proofs && <div className="project-evidence" aria-label={`${item.label} evidence`}>
-      {item.proofs.map((proof) => <div key={proof.label}><strong>{proof.value}</strong><span>{proof.label}</span></div>)}
-    </div>}
-    <div className="project-overview" aria-live="polite" aria-atomic="true">
-      <div className="project-summary">
-        <h2>{item.title}</h2>
-        <p className="entity-intro">{item.intro}</p>
+      <p className="case-subtitle">{notes.subtitle}</p>
+      <p className="dossier-label case-status">{item.kind} · {item.status}</p>
+    </header>
+    <div className="case-grid">
+      <div className="case-artifacts">
+        <figure className={`project-visual${item.visualStyle ? ` project-visual--${item.visualStyle}` : ''}`}>
+          <ProjectMedia item={item} />
+        </figure>
+        {item.proofs && <div className="case-evidence" aria-label={`${item.label} evidence`}>
+          {item.proofs.map((proof) => <div key={proof.label}><strong className={proof.value.length > 7 ? 'is-long' : ''}>{proof.value}</strong><span>{proof.label}</span></div>)}
+        </div>}
+        <section className="case-process"><h2 className="dossier-label">Implementation</h2><p>{item.body}</p></section>
+      </div>
+      <aside className="case-narrative">
+        {[['Context', item.intro], ['Role', notes.role], ['Problem', notes.problem], ['Result', notes.result]].map(([label, copy]) => <section key={label}><h2 className="dossier-label">{label}</h2><p>{copy}</p></section>)}
+        <section><h2 className="dossier-label">Stack</h2><p className="case-stack">{item.tags.join(' · ')}</p></section>
         {(item.href || item.demo) && <div className="entity-project-links">
           {item.href && <a className="entity-link" href={item.href} target="_blank" rel="noreferrer">{item.linkLabel || 'GitHub'} <span aria-hidden="true">↗</span></a>}
           {item.demo && <a className="entity-link entity-link--secondary" href={item.demo} target="_blank" rel="noreferrer">Demo <span aria-hidden="true">▶</span></a>}
         </div>}
-      </div>
-      <div className="entity-detail">
-        <h2>{item.detail}</h2>
-        <p>{item.body}</p>
-        <div className="entity-tags">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
-      </div>
+      </aside>
     </div>
-  </div>;
+  </article>;
 }
 
 function SeenaRole({ role, onOpenProject }) {
-  return <article className="seena-role">
-    <div className="seena-role__heading"><h2>{role.organization}</h2><span>{role.period}</span></div>
-    <p className="seena-role__title">{role.title}</p>
-    <p className="seena-role__body">{role.body}</p>
-    {role.href && <a className="entity-link seena-role__link" href={role.href} target="_blank" rel="noreferrer">{role.linkLabel}<span aria-hidden="true">↗</span></a>}
-    {role.project && <button type="button" className="entity-link seena-role__link" onClick={onOpenProject}>View document platform project<span aria-hidden="true">↗</span></button>}
+  return <article className="profile-role">
+    <div className="profile-role__identity"><span>{role.period}</span><h2>{role.organization}</h2><p>{role.title}</p></div>
+    <div className="profile-role__detail"><p>{role.body}</p>
+    {role.href && <a className="profile-role__link" href={role.href} target="_blank" rel="noreferrer">{role.linkLabel}<span aria-hidden="true">↗</span></a>}
+    {role.project && <button type="button" className="profile-role__link" onClick={onOpenProject}>View document platform project<span aria-hidden="true">↗</span></button>}
+    </div>
   </article>;
 }
 
 function SeenaProfile({ data, headingRef, onOpenProject, phase, transfer }) {
-  return <div className="seena-profile">
-    <div className="seena-profile__hero">
-      <div className="seena-profile__opening">
-        <h1 ref={headingRef} tabIndex={-1}>{data.title}</h1>
-        <p className="seena-profile__intro">{data.intro}</p>
-      </div>
+  return <div className="seena-profile profile-sheet">
+    <div className="profile-sheet__hero">
+      <span className="profile-index profile-index--hero">01 / Profile</span>
       <Suspense fallback={<figure className="seena-portrait" aria-label="Loading portrait" aria-busy="true" />}>
         <SeenaPortrait3D phase={phase} transfer={transfer} />
       </Suspense>
-      <div className="seena-profile__body">
-        <div className="seena-profile__roles">
+      <div className="profile-sheet__opening">
+        <div className="profile-sheet__lead">
+          <h1 ref={headingRef} tabIndex={-1}>{data.title}</h1>
+          <p className="profile-descriptor dossier-label">Full-stack engineer /<br /> Product builder</p>
+        </div>
+        <p className="profile-sheet__intro">{data.intro}</p>
+      </div>
+      </div>
+      <div className="profile-sheet__body">
+        <div className="profile-sheet__roles">
           {data.experience.map((experience) => <SeenaRole key={experience.organization} role={experience} onOpenProject={onOpenProject} />)}
         </div>
-        <div className="seena-profile__facts">
-          <section className="seena-profile__section"><h2>Capabilities</h2><p>{data.capabilities}</p></section>
-          <section className="seena-profile__section"><h2>Education</h2><p>{data.education}</p></section>
-        </div>
       </div>
-    </div>
+        <div className="profile-sheet__facts">
+          <div className="profile-capabilities">
+            <section><h2>Product</h2><ul className="profile-capability-list"><li>React</li><li>TypeScript</li><li>React Native</li><li>Angular</li><li>Next.js</li></ul></section>
+            <section><h2>Backend</h2><ul className="profile-capability-list"><li>Python</li><li>FastAPI</li><li>Express</li><li>PostgreSQL</li><li>Supabase</li><li>Authentication & RBAC</li></ul></section>
+            <section className="profile-education"><h2>Education</h2><p><strong>{data.education.degree}</strong><br />{data.education.school}<br />{data.education.gpa}</p></section>
+            <section><h2>Systems</h2><ul className="profile-capability-list"><li>Docker</li><li>Azure</li><li>GCP</li><li>CI/CD</li><li>Durable workers</li></ul></section>
+            <section><h2>Applied AI</h2><ul className="profile-capability-list"><li>LangGraph</li><li>GPU serving</li><li>3D workflows</li><li>Evidence-based evaluation</li></ul></section>
+          </div>
+        </div>
   </div>;
 }
 
@@ -206,23 +227,6 @@ const sections = {
           { value: 'Restart-safe', label: 'persisted job recovery' },
           { value: '5 formats', label: 'GLB · FBX · OBJ · STL · USDZ' },
           { value: '81 tests', label: 'repository test functions' },
-        ],
-      },
-      {
-        label: 'Field Safety', word: 'Field Safety', title: 'A field product.\nOwned end to end.',
-        origin: 'Client product', kind: 'Pre-seed B2B product', status: 'Functional MVP',
-        intro: 'A cross-platform safety-management product delivered in under six months and piloted with 50 employees.',
-        detail: 'Product definition, mobile workflows, backend architecture, data migration, identity, and rollout preparation.',
-        body: 'The React Native application brought toolbox talks, certifications, inspections, document retention, and tickets into one place. The system ran on Express, PostgreSQL, GCP, and Docker, with claims-based authorization across five permission tiers plus phone and email MFA. Migrating from the NoSQL prototype to PostgreSQL cut response times by up to 50%.',
-        tags: ['React Native', 'TypeScript', 'Express', 'PostgreSQL', 'GCP', 'RBAC'],
-        renderer: 'diagram', diagramType: 'field', visualStyle: 'diagram',
-        imageAlt: 'Reconstructed system diagram of the field-safety platform; no client-confidential interface or data is shown',
-        privateLabel: 'Client product', privateNote: 'Reconstructed case study',
-        proofs: [
-          { value: '50', label: 'employees in pilot' },
-          { value: '< 6 months', label: 'to functional MVP' },
-          { value: 'Up to 50%', label: 'faster responses' },
-          { value: '5 tiers', label: 'claims-based permissions' },
         ],
       },
       {
@@ -285,10 +289,10 @@ const sections = {
       },
     ],
     capabilities: 'TypeScript, React, React Native, Angular, Next.js, Python, FastAPI, Express, PostgreSQL, Supabase, Docker, Azure, GCP, LangGraph, Blender, and GPU serving.',
-    education: 'B.S. Computer Science with Honors · Cal Poly San Luis Obispo · 3.9 GPA.',
+    education: { degree: 'B.S. Computer Science with Honors', school: 'Cal Poly San Luis Obispo', gpa: '3.9 GPA' },
   },
   4: {
-    label: 'Contact', eyebrow: '', title: 'Contact.',
+    label: 'Contact', eyebrow: '', title: 'Contact',
     intro: 'Sacramento–Folsom, CA · Open to remote or hybrid product engineering, full-stack, forward-deployed, and applied-AI roles.',
     chapters: [
       { label: 'Connect', word: 'Start a\nconversation.', detail: 'The shortest path is email.', body: 'Reach out about product engineering, full-stack systems, forward-deployed work, applied AI, or a technically difficult product that needs broad ownership.', tags: ['Roles', 'Products', 'Technical systems'] },
@@ -370,11 +374,12 @@ export default function EntityDisplay({ section, phase, opacity, onInteract, onO
   }, [ready, onBack]);
 
   return createPortal(
-    <main ref={scrollRef} className={`entity-experience entity-experience--${(data.slug || data.label).toLowerCase()} ${phase === 'toRect' || phase === 'toLava' || ready ? 'is-revealing' : ''}`}
+    <main ref={scrollRef} className={`entity-experience terminal-surface entity-experience--${(data.slug || data.label).toLowerCase()} ${phase === 'toRect' || phase === 'toLava' || ready ? 'is-revealing' : ''}`}
       style={{ opacity, pointerEvents: ready ? 'auto' : 'none' }} inert={!ready} data-fluid-settled={ready ? 'true' : 'false'}
       aria-label={`${data.label} section`}>
       <header className="entity-header">
         <button className="entity-back" onClick={onBack}><span aria-hidden="true">↖</span> Menu</button>
+        <span className="terminal-location"><span aria-hidden="true">/</span> {data.label}</span>
       </header>
 
       <section ref={storyRef} className="entity-story">
@@ -383,20 +388,25 @@ export default function EntityDisplay({ section, phase, opacity, onInteract, onO
         </div>}
         {section === 0 && <div className="entity-chapter-mobile" aria-label="Project navigation">
           <button type="button" aria-label="Previous project" onClick={() => selectChapter((chapter + data.chapters.length - 1) % data.chapters.length)}>←</button>
-          <span>{String(chapter + 1).padStart(2, '0')} / {String(data.chapters.length).padStart(2, '0')} <strong>{item.label}</strong></span>
+          <span><strong>{item.label}</strong></span>
           <button type="button" aria-label="Next project" onClick={() => selectChapter((chapter + 1) % data.chapters.length)}>→</button>
         </div>}
-        {section === 0 && <ProjectContent key={item.label} item={item} chapter={chapter} headingRef={headingRef} />}
+        {section === 0 && <ProjectContent key={item.label} item={item} headingRef={headingRef} />}
         {section === 1 && <SeenaProfile data={data} headingRef={headingRef} onOpenProject={onOpenProject} phase={phase} transfer={transfer} />}
         {section === 4 && <>
-        <h1 ref={headingRef} tabIndex={-1}>{data.title}</h1>
-        <p className="entity-intro">{data.intro}</p>
+        <div className="contact-opening"><h1 ref={headingRef} tabIndex={-1}>Let’s talk.</h1>
+        <p className="contact-invitation">Have something interesting to build?</p></div>
         <div className="contact-destinations">
           <a href="mailto:ssabed00@gmail.com"><span>Email</span><span aria-hidden="true">↗</span></a>
           <a href="/Seena-Abed-Resume.pdf" download><span>Résumé</span><span aria-hidden="true">↓</span></a>
           <a href="https://linkedin.com/in/seena-abed-7824b7191/" target="_blank" rel="noreferrer"><span>LinkedIn</span><span aria-hidden="true">↗</span></a>
           <a href="https://github.com/seena18" target="_blank" rel="noreferrer"><span>GitHub</span><span aria-hidden="true">↗</span></a>
         </div>
+        <dl className="contact-metadata">
+          <div><dt>Base</dt><dd>Sacramento / Folsom, CA</dd></div>
+          <div><dt>Work</dt><dd>Remote / hybrid</dd></div>
+          <div><dt>Focus</dt><dd>Product · full stack · forward deployed · applied AI</dd></div>
+        </dl>
         </>}
       </section>
     </main>, document.body
